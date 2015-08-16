@@ -1,0 +1,22 @@
+{
+  "name": "pargs",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "github.com/ibakaidov/pargs"
+  },
+  "keywords": [
+    "promise"
+  ],
+  "author": "ibakaidov",
+  "license": "ISC",
+  "dependencies": {
+    "async": "^1.3.0",
+    "promise": "^7.0.3"
+  }
+}
