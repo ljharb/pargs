@@ -1,7 +1,7 @@
 {
   "name": "pargs",
-  "version": "0.1.0",
-  "description": "",
+  "version": "0.1.1",
+  "description": "Module for code sync in async world.",
   "main": "index.js",
   "scripts": {
     "test": "node test"
