@@ -1,6 +1,6 @@
 {
   "name": "pargs",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Module for code sync in async world.",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "github.com/ibakaidov/pargs"
+    "url": "https://github.com/ibakaidov/pargs"
   },
   "keywords": [
     "promise"
