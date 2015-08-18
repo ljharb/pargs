@@ -11,7 +11,7 @@ var fs = require('fs');
 var $ = require('pargs');
 $.onerror = console.error;
 var script = $(fs.readFile, __filename, 'utf-8');
-var minify = $.sync($.field(script, 'replace'), /\n||\t/g, "");
+var minify = $.s(script.f('replace'), /\n||\t/g, "");
 var done = $(fs.writeFile, __dirname + "/index.min.js", minify);
 $.deps.sync(console.log, "done", [done]);
 ```
@@ -21,7 +21,58 @@ $.deps.sync(console.log, "done", [done]);
 * pargs.d.s = pargs.deps.sync;
 * pargs.f = pargs.field;
 * pargs.a = pargs.array;
+## API
+## pargs(func, [...args])
+
+### Params:
+
+* **** *func* {function or parg} async function
+* **** *[...args]* args for call function, if among arguments will be parg (Abstruction argument), then pargs will wait to get it..
+
+### Return:
+
+* **parg** 
+
+## pargs.sync 
+This function work as main pargs funciton, only first argument is sync function.
+
+## pargs.withoutError
+
+### Params:
+
+* **** *func* {function or parg} async function, who doesn't push error or null in callback
+
+### Return:
+
+* **function** normal function.
+
+## pargs.deps 
+Functon as pargs main function, only last argument is array of deps, pagrs will wait them too, but the function itself will not be transmitted.
+
+## pargs.deps.sync
+
+## pargs.field 
+You can use parg.field(name)
+
+### Params:
+
+* **** *object* {parg}
+* **** *name* 
+
+### Return:
+
+* **parg** field by name in object
+
+## pargs.array 
+create parg, who wait all elements in array(array)
+
+### Params:
+
+* **** *array* {array or parg}
+
+### Return:
+
+* **parg** 
 
 ## TODO
-* Write README docs.
 * Write interface for without error async functions
