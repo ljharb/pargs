@@ -156,8 +156,8 @@ entry.deps.sync = function () {
  * @returns {parg} field by name in object
  */
 entry.field = function (object, name) {
-    return entry.s(function (object) {
-        return object[name].bind(object);
+    return entry.s(function (obj) {
+        return ('function' === typeof obj)?obj[name].bind(obj):obj[name];
     }, object);
 };
 /**0

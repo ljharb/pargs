@@ -13,8 +13,10 @@ $.onerror = console.error;
 var script = $(fs.readFile, __filename, 'utf-8');
 var minify = $.s(script.f('replace'), /\n||\t/g, "");
 var done = $(fs.writeFile, __dirname + "/index.min.js", minify);
-$.deps.sync(console.log, "done", [done]);
+$.d.s(console.log, "done", [done]);
 ```
+Other examples in examples directory.
+For run examples you need install devDependencies. (npm i in the module dir)
 ## Aliases
 * pargs.s = pargs.sync;
 * pargs.d = pargs.deps;
