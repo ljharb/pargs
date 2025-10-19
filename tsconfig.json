@@ -1,0 +1,13 @@
+{
+	"extends": "@ljharb/tsconfig",
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"resolveJsonModule": true,
+		"maxNodeModuleJsDepth": 0,
+	},
+	"exclude": [
+		"coverage",
+	],
+}

@@ -1,80 +1,70 @@
-# Pargs
-Pargs - promise arguments. It is a utility for work async functions as sync. 
-## Install
-```bash
-npm i pargs
-```
-## Use
+# pargs <sup>[![Version Badge][npm-version-svg]][package-url]</sup>
+
+[![github actions][actions-image]][actions-url]
+[![coverage][codecov-image]][codecov-url]
+[![License][license-image]][license-url]
+[![Downloads][downloads-image]][downloads-url]
+
+[![npm badge][npm-badge-png]][package-url]
+
+A wrapper for node’s built-in `util.parseArgs` with helpful features added.
+
+## Usage
+
 ```js
-var fs = require('fs');
+#!/usr/bin/env node
 
-var $ = require('pargs');
-$.onerror = console.error;
-var script = $(fs.readFile, __filename, 'utf-8');
-var minify = $.s(script.f('replace'), /\n||\t/g, "");
-var done = $(fs.writeFile, __dirname + "/index.min.js", minify);
-$.d.s(console.log, "done", [done]);
+import pargs from 'pargs';
+
+const {
+    help,
+    positionals,
+    values,
+    errors, // a mutable string array; push to it and pargs will include your error messages.
+    name, // if subcommands are used
+    tokens,
+} = await pargs(import.meta.filename, options);
+
+// do extra validation here
+
+await help(); // to handle `--help` and print the help text if needed, or to print errors and exit
 ```
-Other examples in examples directory.
-For run examples you need install devDependencies. (npm i in the module dir)
-## Aliases
-* pargs.s = pargs.sync;
-* pargs.d = pargs.deps;
-* pargs.d.s = pargs.deps.sync;
-* pargs.f = pargs.field;
-* pargs.a = pargs.array;
-## API
-## pargs(func, [...args])
 
-### Params:
+### Help
 
-* **** *func* {function or parg} async function
-* **** *[...args]* args for call function, if among arguments will be parg (Abstruction argument), then pargs will wait to get it..
+Help text is automatically read from a `help.txt` file adjacent to `import.meta.filename`.
 
-### Return:
+`await` an invocation of the `help` function returned from the pargs call to handle `--help` and print the help text if needed, or to print errors and exit.
 
-* **parg** 
+### Options
 
-## pargs.sync 
-This function work as main pargs funciton, only first argument is sync function.
+See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilparseargsconfig) for some context.
 
-## pargs.withoutError
+ - `strict`: can not be set to `false` - strictness all the way.
+ - `allowNegative`: can not be set to `false`.
+ - `args`: can not provide; pargs always uses `process.cwd()` - this may be added in the future, though.
+ - `options.type`: in addition to `'boolean'` and `'string'`, `'enum'`: when provided, a `choices` string array is also required.
+ - `allowPositionals`: in addition to a boolean, or an integer representing the maximum number of allowed positional arguments.
+ - `subcommands`: if provided, must be an object. Keys are the subcommand names (eg, in `npm ls`, `ls` is the subcommand), and values are the configuration options for each subcommand - as if they were a top-level invocation.
 
-### Params:
+## Install
+``
+```sh
+npm install --save pargs
+```
 
-* **** *func* {function or parg} async function, who doesn't push error or null in callback
+## License
 
-### Return:
+MIT
 
-* **function** normal function.
-
-## pargs.deps 
-Functon as pargs main function, only last argument is array of deps, pagrs will wait them too, but the function itself will not be transmitted.
-
-## pargs.deps.sync
-
-## pargs.field 
-You can use parg.field(name)
-
-### Params:
-
-* **** *object* {parg}
-* **** *name* 
-
-### Return:
-
-* **parg** field by name in object
-
-## pargs.array 
-create parg, who wait all elements in array(array)
-
-### Params:
-
-* **** *array* {array or parg}
-
-### Return:
-
-* **parg** 
-
-## TODO
-* Write interface for without error async functions
+[package-url]: https://npmjs.org/package/pargs
+[npm-version-svg]: https://versionbadg.es/ljharb/pargs.svg
+[npm-badge-png]: https://nodei.co/npm/pargs.png?downloads=true&stars=true
+[license-image]: https://img.shields.io/npm/l/pargs.svg
+[license-url]: LICENSE
+[downloads-image]: https://img.shields.io/npm/dm/pargs.svg
+[downloads-url]: https://npm-stat.com/charts.html?package=pargs
+[codecov-image]: https://codecov.io/gh/ljharb/pargs/branch/main/graphs/badge.svg
+[codecov-url]: https://app.codecov.io/gh/ljharb/pargs/
+[actions-image]: https://img.shields.io/endpoint?url=https://github-actions-badge-u3jn4tfpocch.runkit.sh/ljharb/pargs
+[actions-url]: https://github.com/ljharb/pargs/actions
