@@ -57,6 +57,10 @@ npm install --save pargs
 
 MIT
 
+## Thanks
+
+Thanks to [@ibakaidov] for donating the `pargs` package name!
+
 [package-url]: https://npmjs.org/package/pargs
 [npm-version-svg]: https://versionbadg.es/ljharb/pargs.svg
 [npm-badge-png]: https://nodei.co/npm/pargs.png?downloads=true&stars=true
@@ -68,3 +72,4 @@ MIT
 [codecov-url]: https://app.codecov.io/gh/ljharb/pargs/
 [actions-image]: https://img.shields.io/endpoint?url=https://github-actions-badge-u3jn4tfpocch.runkit.sh/ljharb/pargs
 [actions-url]: https://github.com/ljharb/pargs/actions
+[@ibakaidov]: https://github.com/ibakaidov
