@@ -1,6 +1,6 @@
 {
 	"name": "pargs",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "A useful wrapper for `util.parseArgs`",
 	"main": "./index.mjs",
 	"exports": {
