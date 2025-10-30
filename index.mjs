@@ -108,7 +108,7 @@ export default async function pargs(entrypointPath, obj) {
 		// eslint-disable-next-line no-inner-declarations
 		async function help() {
 			if (('help' in results.values && results.values.help) || errors.length > 0) {
-				const helpText = await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`;
+				const helpText = `${(await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`).trim()}\n`;
 				if (errors.length === 0) {
 					console.log(helpText);
 				} else {
@@ -187,7 +187,7 @@ export default async function pargs(entrypointPath, obj) {
 			return {
 				async help() {
 					const helpText = await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`;
-					console.log(`${helpText}'\n`);
+					console.log(`${helpText}\n`);
 
 					process.exitCode ||= parseInt('1', 2);
 					console.error(fakeErrors[0]);
