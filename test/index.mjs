@@ -453,6 +453,7 @@ test('pargs - help functionality', async (t) => {
 		st.equal(typeof result.help, 'function', 'result has help function');
 		st.notOk(result.values.help, '--help flag should not be set');
 
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
 		const errorCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'error');
 		const exitCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
 			throw new Error('EXIT');
@@ -466,6 +467,7 @@ test('pargs - help functionality', async (t) => {
 			st.ok(e instanceof Error, 'process.exit mock throws');
 		}
 
+		const logs = logCapture().map((call) => call.args.join(' '));
 		const errors = errorCapture().map((call) => call.args.join(' '));
 		const exitCalls = exitCapture();
 		const capturedExitCode = process.exitCode;
@@ -474,8 +476,8 @@ test('pargs - help functionality', async (t) => {
 
 		st.equal(exitCalls.length, 1, 'help() with errors calls process.exit');
 		st.ok(errors.length > 0, 'console.error was called');
-		st.ok(errors.some((err) => err.includes('This is help text')), 'help text was output to console.error');
-		st.ok(errors.some((err) => err.includes('Unknown option')), 'help() outputs errors to console.error');
+		st.ok(logs.some((log) => log.includes('This is help text')), 'help text was output to stdout');
+		st.ok(errors.some((err) => err.includes('Unknown option')), 'help() outputs errors to stderr');
 		st.ok(Number(capturedExitCode) > 0, 'process.exitCode was set to non-zero');
 	});
 });
