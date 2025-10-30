@@ -112,7 +112,7 @@ export default async function pargs(entrypointPath, obj) {
 				if (errors.length === 0) {
 					console.log(helpText);
 				} else {
-					console.error(`${helpText}\n`);
+					console.log(`${helpText}\n`);
 
 					process.exitCode ||= parseInt('1'.repeat(errors.length), 2);
 					errors.forEach((error) => console.error(error));

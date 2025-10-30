@@ -563,6 +563,7 @@ test('pargs - help() error output path coverage', async (t) => {
 		st.ok(result.errors.length > 0, 'has errors');
 		st.notOk(result.values.help, '--help flag should be false');
 
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
 		const errorCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'error');
 		const exitCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
 			throw new Error('EXIT');
@@ -577,6 +578,7 @@ test('pargs - help() error output path coverage', async (t) => {
 			st.ok(e instanceof Error, 'process.exit mock throws');
 		}
 
+		const logs = logCapture().map((call) => call.args.join(' '));
 		const errors = errorCapture().map((call) => call.args.join(' '));
 		const exitCalls = exitCapture();
 		const capturedExitCode = process.exitCode;
@@ -584,8 +586,8 @@ test('pargs - help() error output path coverage', async (t) => {
 		process.exitCode = originalExitCode;
 
 		st.equal(exitCalls.length, 1, 'help() was called and exited');
-		st.ok(errors.some((err) => err.includes('Help text for errors')), 'help text was output to console.error');
-		st.ok(errors.some((err) => err.includes('Invalid value for option "level"')), 'errors were output to console.error');
+		st.ok(logs.some((log) => log.includes('Help text for errors')), 'help text was output to stderr');
+		st.ok(errors.some((err) => err.includes('Invalid value for option "level"')), 'errors were output to stdout');
 		st.ok(Number(capturedExitCode) > 0, 'process.exitCode was set');
 	});
 });
