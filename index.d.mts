@@ -14,6 +14,7 @@ export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositi
 		});
 	};
 	allowPositionals?: boolean | number;
+	minPositionals?: number;
 };
 
 export type PargsRootConfig = PargsConfig & {

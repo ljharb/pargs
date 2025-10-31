@@ -57,6 +57,10 @@ export default async function pargs(entrypointPath, obj) {
 		throw new TypeError('Error: `allowPositionals` is not allowed when `subcommands` is defined');
 	}
 
+	if ('subcommands' in obj && 'minPositionals' in passedConfig) {
+		throw new TypeError('Error: `minPositionals` is not allowed when `subcommands` is defined');
+	}
+
 	const enums = { __proto__: null };
 
 	/** @type {{ options: ParseArgsConfig['options'] & { help: { default: false, type: 'boolean' } } }} */
@@ -122,11 +126,15 @@ export default async function pargs(entrypointPath, obj) {
 			}
 		}
 
-		const { allowPositionals } = passedConfig;
+		const { allowPositionals, minPositionals } = passedConfig;
 
 		const posCount = typeof allowPositionals === 'number' ? allowPositionals : allowPositionals || subcommands ? Infinity : 0;
 		if (results.positionals.length > posCount) {
 			errors[errors.length] = `Only ${posCount} positional arguments allowed; got ${results.positionals.length}`;
+		}
+		const minPos = typeof minPositionals === 'number' ? minPositionals : 0;
+		if (results.positionals.length < minPos) {
+			errors[errors.length] = `At least ${minPos} positional arguments required; got ${results.positionals.length}`;
 		}
 
 		const optionTokens = tokens.filter(/** @type {(token: typeof tokens[number]) => token is OptionToken} */ (token) => token.kind === 'option');

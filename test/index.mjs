@@ -95,6 +95,28 @@ test('pargs - allowPositionals and subcommands are mutually exclusive', async (t
 	}
 });
 
+test('pargs - minPositionals and subcommands are mutually exclusive', async (t) => {
+	try {
+		await pargs(filename, {
+			minPositionals: 2,
+			subcommands: { foo: {} },
+		});
+		t.fail('should have thrown');
+	} catch (e) {
+		t.ok(e instanceof TypeError, 'throws TypeError when both minPositionals and subcommands are defined');
+	}
+
+	try {
+		await pargs(filename, {
+			minPositionals: 2,
+			subcommands: { foo: {} },
+		});
+		t.fail('should have thrown');
+	} catch (e) {
+		t.ok(e instanceof TypeError, 'throws TypeError when minPositionals is a number and subcommands are defined');
+	}
+});
+
 test('pargs - enum choices validation', async (t) => {
 	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, filename] });
 
@@ -339,6 +361,86 @@ test('pargs - allowPositionals functionality', async (t) => {
 		});
 		st.equal(result.command.positionals.length, 1, 'subcommand parses positionals');
 		st.equal(result.command.errors.length, 0, 'no errors in subcommand with allowed positionals');
+	});
+});
+
+test('pargs - minPositionals functionality', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await Promise.all([
+		writeFile(helpPath, 'Test help text'),
+		writeFile(entrypoint, '// test file'),
+	]);
+	t.test('not enough positionals', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js'] });
+		const result = await pargs(entrypoint, {
+			allowPositionals: true,
+			minPositionals: 2,
+		});
+		st.ok(result.errors.length > 0, 'has errors when not enough positionals');
+		st.ok(
+			result.errors.some((e) => e.includes('At least 2 positional')),
+			'error mentions minimum positional requirement',
+		);
+	});
+
+	t.test('too many positionals', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
+		const result = await pargs(entrypoint, {
+			allowPositionals: 2,
+			minPositionals: 1,
+		});
+		st.ok(result.errors.length > 0, 'has errors when too many positionals');
+		st.ok(
+			result.errors.some((e) => e.includes('Only 2 positional')),
+			'error mentions maximum positional limit',
+		);
+	});
+
+	t.test('min number of positionals', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js'] });
+		const result = await pargs(entrypoint, {
+			allowPositionals: true,
+			minPositionals: 2,
+		});
+		st.equal(result.positionals.length, 2, 'parses exactly minimum number of positionals');
+		st.equal(result.errors.length, 0, 'no errors when minimum positionals provided');
+	});
+
+	t.test('minPositionals in subcommand', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js'] });
+		const notEnoughResult = await pargs(entrypoint, {
+			subcommands: {
+				build: {
+					allowPositionals: true,
+					minPositionals: 2,
+				},
+			},
+		});
+		st.ok(notEnoughResult.command.errors.length > 0, 'subcommand has errors when not enough positionals');
+		st.ok(
+			notEnoughResult.command.errors.some((e) => e.includes('At least 2 positional')),
+			'error mentions minimum requirement in subcommand',
+		);
+
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js', 'file2.js', 'file3.js'] });
+		const tooManyResult = await pargs(entrypoint, {
+			subcommands: {
+				build: {
+					allowPositionals: 2,
+					minPositionals: 1,
+				},
+			},
+		});
+		st.ok(tooManyResult.command.errors.length > 0, 'subcommand has errors when too many positionals');
+		st.ok(
+			tooManyResult.command.errors.some((e) => e.includes('Only 2 positional')),
+			'error mentions maximum limit in subcommand',
+		);
 	});
 });
 
