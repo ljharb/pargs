@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.0.3...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.1.0...v2.0.0) - 2025-10-24
+
+## [v1.1.0](https://github.com/ljharb/pargs/compare/v1.0.3...v1.1.0) - 2025-10-31
+
+### Commits
+
+- [New] add `minPositionals` option [`3216189`](https://github.com/ljharb/pargs/commit/3216189fbd801b173f12cd63d16e28cc04ea5deb)
 
 ## [v1.0.3](https://github.com/ljharb/pargs/compare/v1.0.2...v1.0.3) - 2025-10-30
 
