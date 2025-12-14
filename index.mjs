@@ -32,7 +32,7 @@ export default async function pargs(entrypointPath, obj) {
 			) {
 				return [];
 			}
-		} catch (e) { /**/ }
+		} catch { /**/ }
 		return arg;
 	});
 
@@ -109,7 +109,6 @@ export default async function pargs(entrypointPath, obj) {
 			});
 		}
 
-		// eslint-disable-next-line no-inner-declarations
 		async function help() {
 			if (('help' in results.values && results.values.help) || errors.length > 0) {
 				const helpText = `${(await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`).trim()}\n`;
