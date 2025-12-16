@@ -776,6 +776,31 @@ test('pargs - tokens option', async (t) => {
 	t.ok(Array.isArray(result.tokens), 'tokens is an array');
 });
 
+test('pargs - tokens option on error path', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await Promise.all([
+		writeFile(helpPath, 'Test help'),
+		writeFile(entrypoint, '// test file'),
+	]);
+
+	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose=yes'] });
+	const result = await pargs(entrypoint, {
+		options: {
+			verbose: { type: 'boolean' },
+		},
+		tokens: true,
+	});
+
+	t.ok(result.errors.length > 0, 'has errors when parseArgs fails');
+	t.ok('tokens' in result, 'result still has tokens property on error');
+	t.ok(Array.isArray(result.tokens), 'tokens is an array on error path');
+});
+
 test('pargs - subcommand without name in argv', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

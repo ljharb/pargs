@@ -204,6 +204,7 @@ export default async function pargs(entrypointPath, obj) {
 				values: {},
 				positionals: [],
 				errors: fakeErrors,
+				...obj.tokens && { tokens: parseArgs({ ...newObj, strict: false }).tokens },
 			};
 		}
 		throw e;
