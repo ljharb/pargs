@@ -1,8 +1,7 @@
-import baseConfig from '@ljharb/eslint-config/flat/node/20';
-import testsConfig from '@ljharb/eslint-config/flat/tests'; // TODO: remove when flat config includes tests override
+import nodeConfig from '@ljharb/eslint-config/flat/node/20';
 
 export default [
-	...baseConfig,
+	...nodeConfig,
 	{
 		rules: {
 			complexity: 0,
@@ -14,8 +13,4 @@ export default [
 			'sort-keys': 0,
 		},
 	},
-	...testsConfig.map((config) => ({
-		...config,
-		files: ['test/**'],
-	})),
 ];
