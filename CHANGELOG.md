@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.1.0...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.1.1...v2.0.0) - 2025-10-24
+
+## [v1.1.1](https://github.com/ljharb/pargs/compare/v1.1.0...v1.1.1) - 2025-12-16
+
+### Commits
+
+- [Dev Deps] update `eslint`, `@ljharb/eslint-config` [`c41a92a`](https://github.com/ljharb/pargs/commit/c41a92a3c4a1c9d236b5e52e80f2776994dc2548)
+- [Fix] provide tokens even on a parseArgs error [`bfe39c8`](https://github.com/ljharb/pargs/commit/bfe39c89189306889b8c7a3a0862dac8db172df4)
+- [Dev Deps] update `@ljharb/eslint-config` [`11c35bc`](https://github.com/ljharb/pargs/commit/11c35bc162fee05a09bd14b57290502303dddad3)
+- [Dev Deps] update `eslint`, `@ljharb/eslint-config`, `@types/node` [`161af14`](https://github.com/ljharb/pargs/commit/161af144871d13fbeb7a6bfe5929db12c380eced)
+- [Dev Deps] pin eslint properly [`eae2363`](https://github.com/ljharb/pargs/commit/eae2363446dd6e7a93cafc3801e33466ff22594a)
+- [Dev Deps] update `@types/node` [`caaf8ad`](https://github.com/ljharb/pargs/commit/caaf8ada6782097da84d10435635816241a0bfc4)
 
 ## [v1.1.0](https://github.com/ljharb/pargs/compare/v1.0.3...v1.1.0) - 2025-10-31
 
