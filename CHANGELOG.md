@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.1.1...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.1.2...v2.0.0) - 2025-10-24
+
+## [v1.1.2](https://github.com/ljharb/pargs/compare/v1.1.1...v1.1.2) - 2025-12-16
+
+### Commits
+
+- [Fix] allow positionals to get tokens on the error path [`2d23b0f`](https://github.com/ljharb/pargs/commit/2d23b0fbb2f956bedf484cdd14a75b1f3f120839)
+- [Tests] ignore eslint config for coverage [`7bc3cab`](https://github.com/ljharb/pargs/commit/7bc3cab8a987a37abe62b6784f5dd10807c309ed)
 
 ## [v1.1.1](https://github.com/ljharb/pargs/compare/v1.1.0...v1.1.1) - 2025-12-16
 
