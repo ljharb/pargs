@@ -801,6 +801,35 @@ test('pargs - tokens option on error path', async (t) => {
 	t.ok(Array.isArray(result.tokens), 'tokens is an array on error path');
 });
 
+test('pargs - tokens option with unexpected positionals', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await Promise.all([
+		writeFile(helpPath, 'Test help'),
+		writeFile(entrypoint, '// test file'),
+	]);
+
+	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'unexpected-positional'] });
+	const result = await pargs(entrypoint, {
+		options: {
+			verbose: { type: 'boolean' },
+		},
+		tokens: true,
+	});
+
+	t.ok(result.errors.length > 0, 'has errors when unexpected positional is provided');
+	t.ok(
+		result.errors.some((e) => e.includes('does not take positional arguments')),
+		'error mentions positional arguments not allowed',
+	);
+	t.ok('tokens' in result, 'result still has tokens property with unexpected positional');
+	t.ok(Array.isArray(result.tokens), 'tokens is an array with unexpected positional');
+});
+
 test('pargs - subcommand without name in argv', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

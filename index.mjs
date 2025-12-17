@@ -191,6 +191,11 @@ export default async function pargs(entrypointPath, obj) {
 	} catch (e) {
 		const fakeErrors = [`Error: ${!!e && typeof e === 'object' && 'message' in e && e.message}`];
 		if (isParseArgsError(e)) {
+			const { tokens } = parseArgs({
+				...newObj,
+				strict: false,
+				allowPositionals: true,
+			});
 			return {
 				async help() {
 					const helpText = await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`;
@@ -204,7 +209,7 @@ export default async function pargs(entrypointPath, obj) {
 				values: {},
 				positionals: [],
 				errors: fakeErrors,
-				...obj.tokens && { tokens: parseArgs({ ...newObj, strict: false }).tokens },
+				...obj.tokens && { tokens },
 			};
 		}
 		throw e;
