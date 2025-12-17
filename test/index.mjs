@@ -885,3 +885,136 @@ test('pargs - subcommand with custom help function', async (t) => {
 		st.ok(result.command.values.help, '--help flag is set in subcommand');
 	});
 });
+
+test('pargs - color stripping in help text', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	const coloredHelp = '\u001B[31mRed text\u001B[0m and \u001B[32mgreen text\u001B[0m';
+	const strippedHelp = 'Red text and green text';
+
+	await Promise.all([
+		writeFile(helpPath, coloredHelp),
+		writeFile(entrypoint, '// test file'),
+	]);
+
+	t.test('strips colors when NO_COLOR is set', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+
+		// Manually set NO_COLOR for this test
+		const originalNoColor = process.env.NO_COLOR;
+		process.env.NO_COLOR = '1';
+		st.teardown(() => {
+			if (originalNoColor === undefined) {
+				delete process.env.NO_COLOR;
+			} else {
+				process.env.NO_COLOR = originalNoColor;
+			}
+		});
+
+		const result = await pargs(entrypoint, {
+			options: {
+				verbose: { type: 'boolean' },
+			},
+		});
+
+		st.ok(result.values.help, '--help flag is set');
+
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+			throw new Error('EXIT');
+		});
+
+		let helpError;
+		try {
+			await result.help();
+		} catch (e) {
+			helpError = e;
+		}
+
+		// Stop capturing console.log before making assertions (tape uses console.log)
+		const logs = logCapture().map((call) => call.args.join(' '));
+
+		st.ok(helpError instanceof Error && helpError.message === 'EXIT', 'help() called process.exit');
+		st.ok(logs.length > 0, 'console.log was called');
+		st.ok(logs.some((log) => log.includes(strippedHelp)), 'ANSI codes are stripped when NO_COLOR is set');
+		st.notOk(logs.some((log) => log.includes('\u001B[')), 'no ANSI escape codes in output');
+	});
+
+	t.test('strips colors when stdout is not a TTY', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process.stdout)), 'isTTY', { value: false });
+
+		// Set up captures before any operations that might use them
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+			throw new Error('EXIT');
+		});
+
+		const result = await pargs(entrypoint, {
+			options: {
+				verbose: { type: 'boolean' },
+			},
+		});
+
+		let helpError;
+		try {
+			await result.help();
+		} catch (e) {
+			helpError = e;
+		}
+
+		// Stop capturing console.log before making assertions (tape uses console.log)
+		const logs = logCapture().map((call) => call.args.join(' '));
+
+		st.ok(result.values.help, '--help flag is set');
+		st.ok(helpError instanceof Error && helpError.message === 'EXIT', 'help() called process.exit');
+		st.ok(logs.length > 0, 'console.log was called');
+		st.ok(logs.some((log) => log.includes(strippedHelp)), 'ANSI codes are stripped when not a TTY');
+		st.notOk(logs.some((log) => log.includes('\u001B[')), 'no ANSI escape codes in output');
+	});
+
+	t.test('preserves colors when stdout is a TTY and NO_COLOR is not set', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process.stdout)), 'isTTY', { value: true });
+
+		// Ensure NO_COLOR is not set
+		const originalNoColor = process.env.NO_COLOR;
+		delete process.env.NO_COLOR;
+		st.teardown(() => {
+			if (originalNoColor !== undefined) {
+				process.env.NO_COLOR = originalNoColor;
+			}
+		});
+
+		// Set up captures before any operations that might use them
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+			throw new Error('EXIT');
+		});
+
+		const result = await pargs(entrypoint, {
+			options: {
+				verbose: { type: 'boolean' },
+			},
+		});
+
+		let helpError;
+		try {
+			await result.help();
+		} catch (e) {
+			helpError = e;
+		}
+
+		// Stop capturing console.log before making assertions (tape uses console.log)
+		const logs = logCapture().map((call) => call.args.join(' '));
+
+		st.ok(result.values.help, '--help flag is set');
+		st.ok(helpError instanceof Error && helpError.message === 'EXIT', 'help() called process.exit');
+		st.ok(logs.length > 0, 'console.log was called');
+		st.ok(logs.some((log) => log.includes(coloredHelp)), 'ANSI codes are preserved when TTY and NO_COLOR not set');
+	});
+});

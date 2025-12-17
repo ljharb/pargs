@@ -4,6 +4,7 @@ import { realpathSync } from 'fs';
 import { readFile } from 'fs/promises';
 
 import isParseArgsError from './isParseArgsError.mjs';
+import maybeStripColors from './maybeStripColors.mjs';
 
 const {
 	hasOwn,
@@ -13,7 +14,10 @@ const {
 	entries,
 } = Object;
 
-const { from, isArray } = Array;
+const {
+	from,
+	isArray,
+} = Array;
 
 /** @typedef {import('./index.d.mts').OptionToken} OptionToken */
 /** @typedef {import('./index.d.mts').PargsConfig} PargsConfig */
@@ -111,7 +115,7 @@ export default async function pargs(entrypointPath, obj) {
 
 		async function help() {
 			if (('help' in results.values && results.values.help) || errors.length > 0) {
-				const helpText = `${(await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`).trim()}\n`;
+				const helpText = maybeStripColors(`${(await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`).trim()}\n`);
 				if (errors.length === 0) {
 					console.log(helpText);
 				} else {
@@ -198,7 +202,7 @@ export default async function pargs(entrypointPath, obj) {
 			});
 			return {
 				async help() {
-					const helpText = await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`;
+					const helpText = maybeStripColors(await `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`);
 					console.log(`${helpText}\n`);
 
 					process.exitCode ||= parseInt('1', 2);
