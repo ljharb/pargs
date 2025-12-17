@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.1.2...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.2.0...v2.0.0) - 2025-10-24
+
+## [v1.2.0](https://github.com/ljharb/pargs/compare/v1.1.2...v1.2.0) - 2025-12-16
+
+### Commits
+
+- [New] strip ANSI colors from help text when appropriate [`4ee3684`](https://github.com/ljharb/pargs/commit/4ee368492921468835e88ec6971602a848766ffb)
+- [Dev Deps] update `@types/node`, `npmignore` [`cc14fb1`](https://github.com/ljharb/pargs/commit/cc14fb17790b613b07aecdcfa51181027fd6e96d)
 
 ## [v1.1.2](https://github.com/ljharb/pargs/compare/v1.1.1...v1.1.2) - 2025-12-16
 
