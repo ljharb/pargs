@@ -131,13 +131,15 @@ export default async function pargs(entrypointPath, obj) {
 
 		const { allowPositionals, minPositionals } = passedConfig;
 
-		const posCount = typeof allowPositionals === 'number' ? allowPositionals : allowPositionals || subcommands ? Infinity : 0;
-		if (results.positionals.length > posCount) {
-			errors[errors.length] = `Only ${posCount} positional arguments allowed; got ${results.positionals.length}`;
-		}
-		const minPos = typeof minPositionals === 'number' ? minPositionals : 0;
-		if (results.positionals.length < minPos) {
-			errors[errors.length] = `At least ${minPos} positional arguments required; got ${results.positionals.length}`;
+		if (!results.values.help) {
+			const posCount = typeof allowPositionals === 'number' ? allowPositionals : allowPositionals || subcommands ? Infinity : 0;
+			if (results.positionals.length > posCount) {
+				errors[errors.length] = `Only ${posCount} positional arguments allowed; got ${results.positionals.length}`;
+			}
+			const minPos = typeof minPositionals === 'number' ? minPositionals : 0;
+			if (results.positionals.length < minPos) {
+				errors[errors.length] = `At least ${minPos} positional arguments required; got ${results.positionals.length}`;
+			}
 		}
 
 		const optionTokens = tokens.filter(/** @type {(token: typeof tokens[number]) => token is OptionToken} */ (token) => token.kind === 'option');

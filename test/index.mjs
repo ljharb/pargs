@@ -442,6 +442,16 @@ test('pargs - minPositionals functionality', async (t) => {
 			'error mentions maximum limit in subcommand',
 		);
 	});
+
+	t.test('--help with missing required positionals does not error', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		const result = await pargs(entrypoint, {
+			allowPositionals: true,
+			minPositionals: 2,
+		});
+		st.equal(result.errors.length, 0, 'no errors when --help is provided');
+		st.ok(result.values.help, '--help flag is set');
+	});
 });
 
 test('pargs - enum validation', async (t) => {
