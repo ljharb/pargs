@@ -71,6 +71,6 @@ Thanks to [@ibakaidov] for donating the `pargs` package name!
 [downloads-url]: https://npm-stat.com/charts.html?package=pargs
 [codecov-image]: https://codecov.io/gh/ljharb/pargs/branch/main/graphs/badge.svg
 [codecov-url]: https://app.codecov.io/gh/ljharb/pargs/
-[actions-image]: https://img.shields.io/endpoint?url=https://github-actions-badge-u3jn4tfpocch.runkit.sh/ljharb/pargs
+[actions-image]: https://img.shields.io/github/check-runs/ljharb/pargs/main
 [actions-url]: https://github.com/ljharb/pargs/actions
 [@ibakaidov]: https://github.com/ibakaidov
