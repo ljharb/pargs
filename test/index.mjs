@@ -580,11 +580,33 @@ test('pargs - number type validation', async (t) => {
 		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
-				port: { type: 'number', default: '3000' },
+				port: { type: 'number', default: 3e3 },
 			},
 		});
 		st.equal(result.values.port, 3000, 'coerces default value to number');
 		st.equal(result.errors.length, 0, 'no errors with default');
+	});
+
+	t.test('number with numeric default (not provided)', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number', default: 3e3 },
+			},
+		});
+		st.equal(result.values.port, 3e3, 'coerces numeric default value to number');
+		st.equal(result.errors.length, 0, 'no errors with numeric default');
+	});
+
+	t.test('number with multiple and numeric defaults (not provided)', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number', multiple: true, default: [80, 443] },
+			},
+		});
+		st.deepEqual(result.values.port, [80, 443], 'coerces numeric array defaults to numbers');
+		st.equal(result.errors.length, 0, 'no errors with numeric array defaults');
 	});
 
 	t.test('number with multiple', async (st) => {

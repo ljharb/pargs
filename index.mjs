@@ -81,7 +81,12 @@ export default async function pargs(entrypointPath, obj) {
 
 		if (value.type === 'number' || value.type === 'integer') {
 			numbers[key] = value.type;
-			return [[key, { ...value, type: 'string' }]];
+			var converted = { ...value, type: 'string' }; // eslint-disable-line no-var
+			if ('default' in converted) {
+				var def = [].concat(converted.default).map(String); // eslint-disable-line no-var
+				converted.default = converted.multiple ? def : def[0];
+			}
+			return [[key, converted]];
 		}
 
 		return [[key, value]];

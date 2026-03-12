@@ -11,12 +11,14 @@ type EnumOptionConfig<C extends readonly string[] = readonly string[]> = Omit<Pa
 	choices: C;
 };
 
-type NumberOptionConfig = Omit<ParseArgsOptionConfig, 'type'> & {
+type NumberOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 	type: 'number';
+	default?: number | number[];
 };
 
-type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type'> & {
+type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 	type: 'integer';
+	default?: number | number[];
 };
 
 type PargsOptionConfig = ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig;
