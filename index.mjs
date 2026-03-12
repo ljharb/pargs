@@ -66,19 +66,25 @@ export default async function pargs(entrypointPath, obj) {
 	}
 
 	const enums = { __proto__: null };
+	const numbers = { __proto__: null };
 
 	/** @type {{ options: ParseArgsConfig['options'] & { help: { default: false, type: 'boolean' } } }} */
 	const normalizedOptions = fromEntries(entries(passedConfig.options ?? {}).flatMap(([key, value]) => {
-		if (value.type !== 'enum') {
-			return [[key, value]];
+		if (value.type === 'enum') {
+			if (!isArray(value.choices) || !value.choices.every((x) => typeof x === 'string')) {
+				throw new TypeError(`Error: enum choices must be an array of strings; \`${key}\` is invalid`);
+			}
+
+			enums[key] = value;
+			return [[key, { ...value, type: 'string' }]];
 		}
 
-		if (!isArray(value.choices) || !value.choices.every((x) => typeof x === 'string')) {
-			throw new TypeError(`Error: enum choices must be an array of strings; \`${key}\` is invalid`);
+		if (value.type === 'number' || value.type === 'integer') {
+			numbers[key] = value.type;
+			return [[key, { ...value, type: 'string' }]];
 		}
 
-		enums[key] = value;
-		return [[key, { ...value, type: 'string' }]];
+		return [[key, value]];
 	}).concat([
 		[
 			'help',
@@ -103,15 +109,31 @@ export default async function pargs(entrypointPath, obj) {
 	try {
 		const { tokens, ...results } = parseArgs(newObj);
 
-		const enumEntries = entries(enums);
-		if (enumEntries.length > 0) {
-			enumEntries.forEach(([key, config]) => {
-				const value = results.values[key];
-				if (!config.choices.includes(value)) {
-					errors[errors.length] = `Error: Invalid value for option "${key}"`;
+		entries(enums).forEach(([key, config]) => {
+			const value = results.values[key];
+			if (!config.choices.includes(value)) {
+				errors[errors.length] = `Error: Invalid value for option "${key}"`;
+			}
+		});
+
+		entries(numbers).forEach(([key, type]) => {
+			const value = results.values[key];
+			if (typeof value === 'undefined') {
+				return;
+			}
+			var allValid = true; // eslint-disable-line no-var
+			const nums = [].concat(value).map((v) => {
+				const num = Number(v);
+				if (!Number.isFinite(num) || (type === 'integer' && !Number.isInteger(num))) {
+					allValid = false;
 				}
+				return num;
 			});
-		}
+			if (!allValid) {
+				errors[errors.length] = `Error: Invalid ${type} value for option "${key}"`;
+			}
+			results.values[key] = isArray(value) ? nums : nums[0];
+		});
 
 		async function help() {
 			if (('help' in results.values && results.values.help) || errors.length > 0) {

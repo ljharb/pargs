@@ -513,6 +513,187 @@ test('pargs - enum validation', async (t) => {
 	});
 });
 
+test('pargs - number type validation', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await Promise.all([
+		writeFile(helpPath, 'Test help text'),
+		writeFile(entrypoint, '// test file'),
+	]);
+
+	t.test('valid number value', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=8080'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number' },
+			},
+		});
+		st.equal(result.values.port, 8080, 'parses valid number value');
+		st.equal(typeof result.values.port, 'number', 'coerces to number type');
+		st.equal(result.errors.length, 0, 'no errors for valid number');
+	});
+
+	t.test('valid negative number', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--offset=-3.5'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				offset: { type: 'number' },
+			},
+		});
+		st.equal(result.values.offset, -3.5, 'parses negative float');
+		st.equal(result.errors.length, 0, 'no errors for negative number');
+	});
+
+	t.test('invalid number value', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=abc'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number' },
+			},
+		});
+		st.ok(result.errors.length > 0, 'has errors for invalid number');
+		st.ok(
+			result.errors.some((e) => e.includes('Invalid number value for option "port"')),
+			'error mentions invalid number value',
+		);
+	});
+
+	t.test('Infinity is not a valid number', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=Infinity'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number' },
+			},
+		});
+		st.ok(result.errors.length > 0, 'has errors for Infinity');
+		st.ok(
+			result.errors.some((e) => e.includes('Invalid number value')),
+			'error mentions invalid number',
+		);
+	});
+
+	t.test('number with default (not provided)', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number', default: '3000' },
+			},
+		});
+		st.equal(result.values.port, 3000, 'coerces default value to number');
+		st.equal(result.errors.length, 0, 'no errors with default');
+	});
+
+	t.test('number with multiple', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=80', '--port=443'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number', multiple: true },
+			},
+		});
+		st.deepEqual(result.values.port, [80, 443], 'parses multiple number values');
+		st.equal(result.errors.length, 0, 'no errors for valid multiple numbers');
+	});
+
+	t.test('number with multiple, one invalid', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=80', '--port=abc'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number', multiple: true },
+			},
+		});
+		st.ok(result.errors.length > 0, 'has errors for invalid number in multiple');
+	});
+});
+
+test('pargs - integer type validation', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await Promise.all([
+		writeFile(helpPath, 'Test help text'),
+		writeFile(entrypoint, '// test file'),
+	]);
+
+	t.test('valid integer value', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=42'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				count: { type: 'integer' },
+			},
+		});
+		st.equal(result.values.count, 42, 'parses valid integer value');
+		st.equal(typeof result.values.count, 'number', 'coerces to number type');
+		st.equal(result.errors.length, 0, 'no errors for valid integer');
+	});
+
+	t.test('float is not a valid integer', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=3.14'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				count: { type: 'integer' },
+			},
+		});
+		st.ok(result.errors.length > 0, 'has errors for float as integer');
+		st.ok(
+			result.errors.some((e) => e.includes('Invalid integer value for option "count"')),
+			'error mentions invalid integer value',
+		);
+	});
+
+	t.test('non-numeric string is not a valid integer', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=abc'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				count: { type: 'integer' },
+			},
+		});
+		st.ok(result.errors.length > 0, 'has errors for non-numeric integer');
+		st.ok(
+			result.errors.some((e) => e.includes('Invalid integer value')),
+			'error mentions invalid integer',
+		);
+	});
+
+	t.test('negative integer is valid', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=-5'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				count: { type: 'integer' },
+			},
+		});
+		st.equal(result.values.count, -5, 'parses negative integer');
+		st.equal(result.errors.length, 0, 'no errors for negative integer');
+	});
+
+	t.test('integer with multiple', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--id=1', '--id=2', '--id=3'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				id: { type: 'integer', multiple: true },
+			},
+		});
+		st.deepEqual(result.values.id, [1, 2, 3], 'parses multiple integer values');
+		st.equal(result.errors.length, 0, 'no errors for valid multiple integers');
+	});
+
+	t.test('integer with multiple, one float', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--id=1', '--id=2.5'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				id: { type: 'integer', multiple: true },
+			},
+		});
+		st.ok(result.errors.length > 0, 'has errors for float in multiple integers');
+	});
+});
+
 test('pargs - help functionality', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

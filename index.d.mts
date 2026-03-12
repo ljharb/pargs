@@ -11,7 +11,15 @@ type EnumOptionConfig<C extends readonly string[] = readonly string[]> = Omit<Pa
 	choices: C;
 };
 
-type PargsOptionConfig = ParseArgsOptionConfig | EnumOptionConfig;
+type NumberOptionConfig = Omit<ParseArgsOptionConfig, 'type'> & {
+	type: 'number';
+};
+
+type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type'> & {
+	type: 'integer';
+};
+
+type PargsOptionConfig = ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig;
 
 export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositionals' | 'options'> & {
 	options?: {
@@ -42,11 +50,13 @@ export type OptionToken = Extract<Token, { kind: 'option' }>;
 type BaseValueType<O extends PargsOptionConfig> =
 	O extends EnumOptionConfig<infer C>
 		? C[number]
-		: O extends { type: 'string' }
-			? string
-			: O extends { type: 'boolean' }
-				? boolean
-				: string | boolean;
+		: O extends { type: 'number' | 'integer' }
+			? number
+			: O extends { type: 'string' }
+				? string
+				: O extends { type: 'boolean' }
+					? boolean
+					: string | boolean;
 
 // Get the full value type for an option (considering multiple)
 type OptionValueType<O extends PargsOptionConfig> =

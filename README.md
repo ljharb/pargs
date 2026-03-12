@@ -43,7 +43,10 @@ See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilp
  - `strict`: can not be set to `false` - strictness all the way.
  - `allowNegative`: can not be set to `false`.
  - `args`: can not provide; pargs always uses `process.cwd()` - this may be added in the future, though.
- - `options.type`: in addition to `'boolean'` and `'string'`, `'enum'`: when provided, a `choices` string array is also required.
+ - `options.type`: in addition to `'boolean'` and `'string'`:
+   - `'enum'`: when provided, a `choices` string array is also required.
+   - `'number'`: validates the value is a finite number and coerces it from a string.
+   - `'integer'`: validates the value is a finite integer and coerces it from a string.
  - `allowPositionals`: in addition to a boolean, or an integer representing the maximum number of allowed positional arguments.
  - `minPositionals`: an integer representing the minimum required number of positional arguments.
  - `subcommands`: if provided, must be an object. Keys are the subcommand names (eg, in `npm ls`, `ls` is the subcommand), and values are the configuration options for each subcommand - as if they were a top-level invocation.
