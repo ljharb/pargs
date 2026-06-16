@@ -21,7 +21,34 @@ type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 	default?: number | number[];
 };
 
-type PargsOptionConfig = ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig;
+export type PargsOptionConfig = (ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig) & {
+	description?: string;
+	placeholder?: string;
+	group?: string;
+	defaultDescription?: string;
+};
+
+export type PositionalConfig = {
+	name: string;
+	description?: string;
+	rest?: boolean;
+};
+
+export type DescriptionExample = string | {
+	command: string;
+	description?: string;
+};
+
+export type DescriptionSection = {
+	title: string;
+	body: string;
+};
+
+export type StructuredDescription = {
+	summary?: string;
+	examples?: DescriptionExample[];
+	sections?: DescriptionSection[];
+};
 
 export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositionals' | 'options'> & {
 	options?: {
@@ -29,6 +56,8 @@ export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositi
 	};
 	allowPositionals?: boolean | number;
 	minPositionals?: number;
+	positionals?: PositionalConfig[];
+	description?: string | StructuredDescription;
 };
 
 export type PargsRootConfig = PargsConfig & {

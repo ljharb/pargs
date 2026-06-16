@@ -32,7 +32,22 @@ await help(); // to handle `--help` and print the help text if needed, or to pri
 
 ### Help
 
-Help text is automatically read from a `help.txt` file adjacent to `import.meta.filename`.
+Help text is automatically read from a `help.txt` file adjacent to `import.meta.filename`, when one is present.
+
+When no `help.txt` file exists, help text is generated automatically from the provided config - the usage line, options (with their types, choices, defaults, and short flags), subcommands, and positional argument requirements. A `help.txt` file, when present, always takes precedence over the generated text.
+
+The program name in the generated usage line comes from the nearest `package.json` (the `bin` entry that points at the entrypoint, falling back to the unscoped package `name`, then to the file’s basename).
+
+The following config fields exist solely to enrich generated help; they are ignored by `util.parseArgs`:
+
+ - `options[name].description`: a string describing the option.
+ - `options[name].placeholder`: the value placeholder shown for a non-boolean option (eg, `placeholder: 'MM/DD/YYYY'` renders `--before <MM/DD/YYYY>` instead of `<string>`).
+ - `options[name].group`: a heading to group the option under; ungrouped options appear first under `Options`, and `--help` is always listed there.
+ - `options[name].defaultDescription`: a string shown as the default in place of the actual `default` value - useful to mask a secret, or to show an env-derived default symbolically (eg, `$HOME/.cache` rather than the resolved path).
+ - `positionals`: an array of `{ name, description?, rest? }`, used to name positionals in the usage line (`<name>` when required per `minPositionals`, else `[name]`; `rest: true` makes it variadic) and to render an `Arguments:` section.
+ - `description` (on a config or subcommand): either a string (used as the summary), or an object `{ summary?, examples?, sections? }`, where `examples` is an array of strings or `{ command, description? }`, and `sections` is an array of `{ title, body }` for free-form blocks (eg, `Behavior`, `Exit codes`).
+
+Option defaults are shown as `(default: …)`, except that a boolean option’s `default: false` is omitted (it is the implicit default; `default: true` is still shown). Array defaults render as `[a, b]` / `[]`.
 
 `await` an invocation of the `help` function returned from the pargs call to handle `--help` and print the help text if needed, or to print errors and exit.
 

@@ -1,11 +1,13 @@
 import test from 'tape';
 import { writeFile } from 'fs/promises';
-import { rmSync } from 'fs';
+import { mkdirSync, realpathSync, rmSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import tmp from 'tmp';
 
 import pargs from '../index.mjs';
+import generateHelp from '../generateHelp.mjs';
+import getHelpText from '../getHelpText.mjs';
 
 const filename = fileURLToPath(import.meta.url);
 
@@ -1339,4 +1341,364 @@ test('pargs - color stripping in help text', async (t) => {
 		st.ok(logs.length > 0, 'console.log was called');
 		st.ok(logs.some((log) => log.includes(coloredHelp)), 'ANSI codes are preserved when TTY and NO_COLOR not set');
 	});
+});
+
+test('generateHelp - options', (t) => {
+	const help = generateHelp('myapp', {
+		options: {
+			verbose: { type: 'boolean', short: 'v', description: 'Enable verbose output' },
+			level: { type: 'enum', choices: ['debug', 'info', 'warn'], default: 'info', description: 'Log level' },
+			port: { type: 'number', description: 'Port to listen on' },
+			ports: { type: 'number', multiple: true, default: [80, 443] },
+			tags: { type: 'string', multiple: true, default: [] },
+			name: { type: 'string', multiple: true },
+		},
+		allowPositionals: true,
+		minPositionals: 1,
+	});
+
+	t.match(help, /^Usage: myapp \[options\] <args\.\.\.>/, 'usage line shows options and required positionals');
+	t.match(help, /-v, --\[no-\]verbose\s+Enable verbose output/, 'boolean with short flag is negatable and described');
+	t.match(help, /--level <debug\|info\|warn>\s+Log level \(default: info\)/, 'enum lists choices and default');
+	t.match(help, /--port <number>\s+Port to listen on/, 'number shows placeholder and description');
+	t.match(help, /--ports <number>\.\.\.\s+\(default: \[80, 443\]\)/, 'multiple with non-empty array default is bracketed');
+	t.match(help, /--tags <string>\.\.\.\s+\(default: \[\]\)/, 'multiple with empty array default renders as []');
+	t.match(help, /--name <string>\.\.\./, 'string multiple without description');
+	t.match(help, /--help\s+Show this help text/, 'always documents --help');
+
+	t.end();
+});
+
+test('generateHelp - allowPositionals without minimum', (t) => {
+	const help = generateHelp('myapp', { options: {}, allowPositionals: true });
+
+	t.match(help, /^Usage: myapp \[--help\] \[args\.\.\.\]/, 'optional positionals shown when no minimum and no options');
+
+	t.end();
+});
+
+test('generateHelp - subcommands', (t) => {
+	const help = generateHelp('myapp', {
+		subcommands: {
+			build: { description: 'Build the project' },
+			test: {},
+		},
+	});
+
+	t.match(help, /^Usage: myapp <command> \[--help\]/, 'usage line shows command placeholder');
+	t.match(help, /Commands:/, 'has a commands section');
+	t.match(help, /build\s+Build the project/, 'subcommand with description');
+	t.match(help, /\n {2}test\b/, 'subcommand without description');
+
+	t.end();
+});
+
+test('generateHelp - empty config', (t) => {
+	const help = generateHelp('myapp', {});
+
+	t.match(help, /^Usage: myapp \[--help\]/, 'minimal usage line');
+	t.match(help, /--help\s+Show this help text/, 'documents --help');
+	t.doesNotMatch(help, /Commands:/, 'no commands section');
+
+	t.end();
+});
+
+test('generateHelp - string description is treated as the summary', (t) => {
+	const help = generateHelp('tool', { description: 'A short summary.' });
+
+	t.match(help, /^A short summary\.\n\nUsage: tool/, 'string description becomes the top summary');
+
+	t.end();
+});
+
+test('generateHelp - placeholders, positionals, groups, and structured description', (t) => {
+	const help = generateHelp('mytool', {
+		description: {
+			summary: 'mytool - does a thing\nacross two lines',
+			examples: [
+				'mytool foo',
+				{ command: 'mytool bar --json', description: 'as JSON' },
+				{ command: 'mytool baz' },
+			],
+			sections: [
+				{ title: 'Exit codes', body: '0  ok\n1  nope' },
+			],
+		},
+		options: {
+			before: { type: 'string', placeholder: 'MM/DD/YYYY', description: 'a date' },
+			level: { type: 'enum', choices: ['a', 'b'], description: 'the level' },
+			config: { type: 'string', group: 'Advanced', description: 'config path' },
+		},
+		allowPositionals: true,
+		minPositionals: 1,
+		positionals: [
+			{ name: 'input', description: 'the input' },
+			{ name: 'extra', rest: true },
+		],
+	});
+
+	t.match(help, /^mytool - does a thing\nacross two lines\n/, 'summary printed at top');
+	t.match(help, /Usage: mytool \[options\] <input> \[extra\.\.\.\]/, 'usage shows required and variadic positionals');
+	t.match(help, /Arguments:\n {2}input +the input\n {2}extra\n/, 'arguments section lists named positionals, undescribed ones too');
+	t.match(help, /--before <MM\/DD\/YYYY> +a date/, 'placeholder overrides the type-derived value name');
+	t.match(help, /--level <a\|b> +the level/, 'enum still lists choices when no placeholder is given');
+	t.match(help, /Options:\n[\s\S]*?--help/, 'default Options group carries --help');
+	t.match(help, /Advanced:\n +--config <string> +config path/, 'grouped option rendered under its own section');
+	t.match(help, /Examples:\n {2}mytool foo\n {2}mytool bar --json +as JSON\n {2}mytool baz\n/, 'examples with and without descriptions');
+	t.match(help, /Exit codes:\n {2}0 +ok\n {2}1 +nope/, 'custom section rendered from title and body');
+
+	t.end();
+});
+
+test('generateHelp - positionals without descriptions skip the Arguments section', (t) => {
+	const help = generateHelp('tool', {
+		positionals: [{ name: 'file' }],
+	});
+
+	t.match(help, /^Usage: tool \[--help\] \[file\]/, 'names the positional in usage even without a description or allowPositionals');
+	t.doesNotMatch(help, /Arguments:/, 'no Arguments section when no positional has a description');
+
+	t.end();
+});
+
+test('generateHelp - subcommand with a structured description summary', (t) => {
+	const help = generateHelp('tool', {
+		subcommands: {
+			build: { description: { summary: 'Build it\nsecond line' } },
+		},
+	});
+
+	t.match(help, /Commands:\n {2}build +Build it\b/, 'uses the structured summary first line in the command list');
+	t.doesNotMatch(help, /second line/, 'only the first summary line is shown in the command list');
+
+	t.end();
+});
+
+test('generateHelp - boolean defaults', (t) => {
+	const help = generateHelp('tool', {
+		options: {
+			off: { type: 'boolean', default: false },
+			on: { type: 'boolean', default: true },
+			plain: { type: 'boolean' },
+		},
+	});
+
+	t.doesNotMatch(help, /--\[no-\]off.*default/, 'omits (default: false) for a boolean defaulting to false');
+	t.match(help, /--\[no-\]on +\(default: true\)/, 'shows (default: true) for a boolean defaulting to true');
+	t.doesNotMatch(help, /--\[no-\]plain.*default/, 'shows no default when none is set');
+
+	t.end();
+});
+
+test('generateHelp - defaultDescription overrides the shown default', (t) => {
+	const help = generateHelp('tool', {
+		options: {
+			cache: { type: 'string', default: '/Users/me/.cache', defaultDescription: '$HOME/.cache' },
+			token: { type: 'string', defaultDescription: 'ghp_…Onn' },
+		},
+	});
+
+	t.match(help, /--cache <string> +\(default: \$HOME\/\.cache\)/, 'shows defaultDescription instead of the real default value');
+	t.match(help, /--token <string> +\(default: ghp_…Onn\)/, 'shows defaultDescription even with no actual default');
+	t.doesNotMatch(help, /\/Users\/me/, 'the real default value is not shown');
+
+	t.end();
+});
+
+test('getHelpText - prefers help.txt when present', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(join(testDir, 'help.txt'), 'Explicit help text');
+
+	const text = await getHelpText(entrypoint, { options: { verbose: { type: 'boolean' } } });
+	t.equal(text, 'Explicit help text', 'returns help.txt contents verbatim, ignoring config');
+
+	t.end();
+});
+
+test('getHelpText - generates from config when help.txt is missing', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+
+	const text = await getHelpText(entrypoint, { options: { verbose: { type: 'boolean', description: 'be loud' } } });
+	t.match(text, /Usage: test\.mjs/, 'usage line is generated from the entrypoint basename');
+	t.match(text, /--\[no-\]verbose\s+be loud/, 'generated help includes configured options');
+
+	t.end();
+});
+
+test('getHelpText - uses the matching package.json bin name', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'bin.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ name: '@scope/thing', bin: { 'my-cmd': './bin.mjs' } })),
+	]);
+
+	const text = await getHelpText(realpathSync(entrypoint), {});
+	t.match(text, /^Usage: my-cmd\b/, 'usage line uses the bin key pointing at the entrypoint, not the filename');
+
+	t.end();
+});
+
+test('getHelpText - falls back to the unscoped package name', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'bin.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ name: '@scope/thing' })),
+	]);
+
+	const text = await getHelpText(realpathSync(entrypoint), {});
+	t.match(text, /^Usage: thing\b/, 'usage line falls back to the unscoped package name when no bin matches');
+
+	t.end();
+});
+
+test('getHelpText - falls back to basename when no package.json is found', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	// a nested dir whose ancestors (within the temp tree) have no package.json
+	const nested = join(testDir, 'a', 'b');
+	mkdirSync(nested, { recursive: true });
+	const entrypoint = join(nested, 'cli.mjs');
+	await writeFile(entrypoint, '// test file');
+
+	const text = await getHelpText(realpathSync(entrypoint), {});
+	t.match(text, /^Usage: cli\.mjs\b/, 'usage line falls back to the file basename');
+
+	t.end();
+});
+
+test('getHelpText - non-matching bin entries fall back to the package name', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'bin.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'other.mjs'), '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({
+			name: 'thing',
+			bin: { missing: './nope.mjs', other: './other.mjs' },
+		})),
+	]);
+
+	const text = await getHelpText(realpathSync(entrypoint), {});
+	t.match(text, /^Usage: thing\b/, 'broken or non-matching bin entries are skipped, falling back to the name');
+
+	t.end();
+});
+
+test('getHelpText - package.json without a name falls back to basename', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'cli.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), '{}'),
+	]);
+
+	const text = await getHelpText(realpathSync(entrypoint), {});
+	t.match(text, /^Usage: cli\.mjs\b/, 'falls back to basename when the nearest package.json has no name');
+
+	t.end();
+});
+
+test('getHelpText - rethrows non-ENOENT errors', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	mkdirSync(join(testDir, 'help.txt')); // a directory where a file is expected
+
+	try {
+		await getHelpText(entrypoint, {});
+		t.fail('should have thrown');
+	} catch (e) {
+		t.ok(e instanceof Error, 'rethrows the read error');
+		t.notEqual(e && typeof e === 'object' && 'code' in e && e.code, 'ENOENT', 'error is not ENOENT');
+	}
+
+	t.end();
+});
+
+test('pargs - generated help when help.txt is absent', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file'); // intentionally no help.txt
+
+	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+	const result = await pargs(entrypoint, {
+		options: {
+			verbose: { type: 'boolean', description: 'Enable verbose output' },
+		},
+	});
+
+	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		throw new Error('EXIT');
+	});
+
+	try {
+		await result.help();
+	} catch (e) {
+		t.ok(e instanceof Error, 'process.exit mock throws');
+	}
+
+	const logs = logCapture().map((call) => call.args.join(' '));
+	t.ok(logs.some((log) => log.includes('Usage: test.mjs')), 'generated usage line is printed');
+	t.ok(logs.some((log) => log.includes('Enable verbose output')), 'generated option description is printed');
+
+	t.end();
+});
+
+test('pargs - generated help on error path when help.txt is absent', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file'); // intentionally no help.txt
+
+	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose=nope'] });
+	const result = await pargs(entrypoint, {
+		options: {
+			verbose: { type: 'boolean' },
+		},
+	});
+
+	t.ok(result.errors.length > 0, 'has errors from the parseArgs failure');
+
+	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+	const errorCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'error');
+	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		throw new Error('EXIT');
+	});
+
+	const originalExitCode = process.exitCode;
+	try {
+		await result.help();
+	} catch (e) {
+		t.ok(e instanceof Error, 'process.exit mock throws');
+	}
+	const logs = logCapture().map((call) => call.args.join(' '));
+	const errors = errorCapture().map((call) => call.args.join(' '));
+	process.exitCode = originalExitCode;
+
+	t.ok(logs.some((log) => log.includes('Usage: test.mjs')), 'generated help is printed on the error path');
+	t.ok(errors.length > 0, 'errors are printed to stderr');
+
+	t.end();
 });
