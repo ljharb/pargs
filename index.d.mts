@@ -35,7 +35,7 @@ export type PargsRootConfig = PargsConfig & {
 	subcommands?: Record<string, PargsConfig>
 };
 
-export type ParseArgsError = (Error | TypeError) & {
+export type ParseArgsError = NodeJS.ErrnoException & {
 	code:
 		| 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
 		| 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE'

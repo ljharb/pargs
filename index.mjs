@@ -19,10 +19,14 @@ const {
 	isArray,
 } = Array;
 
-/** @typedef {import('./index.d.mts').OptionToken} OptionToken */
-/** @typedef {import('./index.d.mts').PargsConfig} PargsConfig */
-/** @typedef {import('./index.d.mts').PargsParsed} PargsParsed */
-/** @typedef {import('./index.d.mts').ParseArgsConfig} ParseArgsConfig */
+/**
+ * @import {
+ *   OptionToken,
+ *   PargsConfig,
+ *   PargsParsed,
+ *   ParseArgsConfig,
+ * } from './index.d.mts'
+ */
 
 /** @type {import('./index.d.mts').default} */
 export default async function pargs(entrypointPath, obj) {

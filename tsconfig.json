@@ -5,8 +5,8 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"resolveJsonModule": true,
-		"maxNodeModuleJsDepth": 0,
 	},
+	"types": ["node"],
 	"exclude": [
 		"coverage",
 	],
