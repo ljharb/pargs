@@ -5,7 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.3.1...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.4.0...v2.0.0) - 2025-10-24
+
+## [v1.4.0](https://github.com/ljharb/pargs/compare/v1.3.1...v1.4.0) - 2026-06-16
+
+### Commits
+
+- [New] auto-generate help text from config when help.txt is absent [`2a1aef7`](https://github.com/ljharb/pargs/commit/2a1aef720123633c871abf3602af340835a1bdf6)
+- [New] always provide a `--version` option [`27cd86c`](https://github.com/ljharb/pargs/commit/27cd86cf089d410a325acad5127dc98a9f552f43)
+- [New] add `defaultCommand` for a fallback subcommand [`9cd7e15`](https://github.com/ljharb/pargs/commit/9cd7e153dbb7fe7e6221e28a337ca76417d06510)
+- [actions] update workflows [`4ce0c71`](https://github.com/ljharb/pargs/commit/4ce0c719acca5765f94d1327306f67a7ce552d30)
+- [types] clean up types [`bec09fa`](https://github.com/ljharb/pargs/commit/bec09fafac7f622bc335bc093a713e0955c31bb9)
+- [Dev Deps] update `@arethetypeswrong/cli`, `@ljharb/eslint-config`, `@types/node`, `auto-changelog`, `tape` [`d7650c4`](https://github.com/ljharb/pargs/commit/d7650c430c8bd25b5fd43a39f04f4cec70734713)
+- [Dev Deps] override `yargs` to 17.7.3-candidate.0 (Node 26 require(ESM) fix) [`e64d5c9`](https://github.com/ljharb/pargs/commit/e64d5c9a2d500265f143fda4cb4a39a4a9e15c2b)
 
 ## [v1.3.1](https://github.com/ljharb/pargs/compare/v1.3.0...v1.3.1) - 2026-03-13
 
