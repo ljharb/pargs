@@ -51,6 +51,11 @@ Option defaults are shown as `(default: …)`, except that a boolean option’s 
 
 `await` an invocation of the `help` function returned from the pargs call to handle `--help` and print the help text if needed, or to print errors and exit.
 
+### Version
+
+`--version` is provided automatically: the same `await help()` call handles it, printing the `version` field from the nearest `package.json` and exiting.
+Unlike `help`, `version` is not reserved - if you define your own `version` option, yours (and your own handling) is used instead, and the built-in one is not added.
+
 ### Options
 
 See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilparseargsconfig) for some context.
@@ -65,7 +70,7 @@ See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilp
  - `allowPositionals`: in addition to a boolean, or an integer representing the maximum number of allowed positional arguments.
  - `minPositionals`: an integer representing the minimum required number of positional arguments.
  - `subcommands`: if provided, must be an object. Keys are the subcommand names (eg, in `npm ls`, `ls` is the subcommand), and values are the configuration options for each subcommand - as if they were a top-level invocation.
- - `defaultCommand`: only allowed alongside `subcommands`; must be the name of one of them. When the first argument is not a recognized subcommand (including when it is a flag, or absent entirely), the full argument list is parsed against this command instead of erroring with `unknown command`. This enables a bare default form (eg, `vers <input>`) to coexist with named subcommands.
+ - `defaultCommand`: only allowed alongside `subcommands`; must be the name of one of them. When the first argument is not a recognized subcommand (including when it is a flag, or absent entirely), the full argument list is parsed against this command instead of erroring with `unknown command`. This enables a bare default form (eg, `vers <input>`) to coexist with named subcommands. `--help`/`--version` still apply at the level invoked: a root-level `--help` (no recognized subcommand) shows the root help (the command list), not the default command's help.
 
 ## Install
 ``

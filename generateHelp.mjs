@@ -117,6 +117,11 @@ export default function generateHelp(name, config) {
 	optionRows.push([
 		'Options', '    --help', 'Show this help text',
 	]);
+	if (!(options && 'version' in options)) {
+		optionRows.push([
+			'Options', '    --version', 'Show the version number',
+		]);
+	}
 
 	const groupOrder = ['Options'];
 	optionRows.forEach(([group]) => {

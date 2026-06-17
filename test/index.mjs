@@ -7,7 +7,7 @@ import tmp from 'tmp';
 
 import pargs from '../index.mjs';
 import generateHelp from '../generateHelp.mjs';
-import getHelpText from '../getHelpText.mjs';
+import getHelpText, { getVersion } from '../getHelpText.mjs';
 
 const filename = fileURLToPath(import.meta.url);
 
@@ -48,6 +48,93 @@ test('pargs - help option reservation', async (t) => {
 			'error message mentions help is reserved',
 		);
 	}
+});
+
+test('pargs - a user-defined version option is preferred over the built-in', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '9.9.9' })),
+	]);
+
+	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--version'] });
+	const result = await pargs(entrypoint, {
+		options: { version: { type: 'boolean' } },
+	});
+	t.ok(result.values.version, 'the user-defined version option still parses');
+
+	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		throw new Error('EXIT');
+	});
+
+	let helpError;
+	try {
+		await result.help();
+	} catch (e) {
+		helpError = e;
+	}
+	const logs = logCapture().map((call) => call.args.join(' '));
+
+	t.notOk(helpError, 'help() does not exit on --version when the user owns the option');
+	t.notOk(logs.some((log) => log.includes('9.9.9')), 'pargs does not auto-print the version when the user owns it');
+
+	t.end();
+});
+
+test('pargs - version flag', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '4.5.6' })),
+	]);
+
+	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--version'] });
+	const result = await pargs(entrypoint, {
+		options: { verbose: { type: 'boolean' } },
+	});
+
+	t.ok(result.values.version, '--version flag is set');
+
+	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		throw new Error('EXIT');
+	});
+
+	let helpError;
+	try {
+		await result.help();
+	} catch (e) {
+		helpError = e;
+	}
+	const logs = logCapture().map((call) => call.args.join(' '));
+
+	t.ok(helpError instanceof Error && helpError.message === 'EXIT', 'help() exits on --version');
+	t.ok(logs.some((log) => log.includes('4.5.6')), 'prints the package version');
+	t.notOk(logs.some((log) => log.includes('Usage')), 'does not print help text for --version');
+
+	t.end();
+});
+
+test('getVersion - empty string when no package.json provides a version', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'cli.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), '{}'),
+	]);
+
+	t.equal(await getVersion(realpathSync(entrypoint)), '', 'no version found yields an empty string');
+
+	t.end();
 });
 
 test('pargs - subcommands validation', async (t) => {
@@ -379,6 +466,66 @@ test('pargs - default subcommand', async (t) => {
 			st.equal(result.command.values.verbose, true, 'parsed the named subcommand option');
 		}
 		st.equal(result.errors.length, 0, 'no errors');
+	});
+});
+
+test('pargs - defaultCommand: root --help and --version apply at the root', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '2.3.4' })),
+	]);
+
+	const config = /** @type {import('../index.d.mts').PargsRootConfig} */ ({
+		defaultCommand: 'run',
+		subcommands: {
+			run: {
+				options: { json: { type: 'boolean' } },
+				allowPositionals: 1,
+			},
+			other: {},
+		},
+	});
+
+	t.test('root --help shows the command list, not the default command help', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		const result = await pargs(entrypoint, config);
+
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+			throw new Error('EXIT');
+		});
+
+		let helpError;
+		try {
+			await result.help();
+		} catch (e) {
+			helpError = e;
+		}
+		const logs = logCapture().map((call) => call.args.join(' '));
+
+		st.ok(helpError instanceof Error && helpError.message === 'EXIT', 'help() exits');
+		st.ok(logs.some((log) => log.includes('Commands:') && log.includes('other')), 'root help lists the subcommands, not just the default command');
+	});
+
+	t.test('root --version prints the version', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--version'] });
+		const result = await pargs(entrypoint, config);
+
+		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
+		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+			throw new Error('EXIT');
+		});
+
+		try {
+			await result.help();
+		} catch { /**/ }
+		const logs = logCapture().map((call) => call.args.join(' '));
+
+		st.ok(logs.some((log) => log.includes('2.3.4')), 'prints the package version at the root level');
 	});
 });
 
@@ -1486,6 +1633,19 @@ test('generateHelp - boolean defaults', (t) => {
 	t.doesNotMatch(help, /--\[no-\]off.*default/, 'omits (default: false) for a boolean defaulting to false');
 	t.match(help, /--\[no-\]on +\(default: true\)/, 'shows (default: true) for a boolean defaulting to true');
 	t.doesNotMatch(help, /--\[no-\]plain.*default/, 'shows no default when none is set');
+
+	t.end();
+});
+
+test('generateHelp - a user-defined version option replaces the built-in --version row', (t) => {
+	const help = generateHelp('tool', {
+		options: {
+			version: { type: 'boolean', short: 'v', description: 'print the version' },
+		},
+	});
+
+	t.match(help, /-v, --\[no-\]version +print the version/, 'renders the user-defined version option');
+	t.equal((help.match(/--(?:\[no-\])?version/g) || []).length, 1, 'no duplicate synthetic --version row is added');
 
 	t.end();
 });

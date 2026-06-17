@@ -54,6 +54,21 @@ async function commandName(realEntrypointPath) {
 		: basename(realEntrypointPath);
 }
 
+// the `version` from the nearest `package.json`, for the reserved `--version`
+/** @type {(realEntrypointPath: string) => Promise<string>} */
+export async function getVersion(realEntrypointPath) {
+	let dir = dirname(realEntrypointPath);
+	while (dir) {
+		const pkg = await readJSON(join(dir, 'package.json')); // eslint-disable-line no-await-in-loop
+		if (pkg && typeof pkg.version === 'string') {
+			return pkg.version;
+		}
+		const parent = dirname(dir);
+		dir = parent === dir ? '' : parent;
+	}
+	return '';
+}
+
 /** @type {(realEntrypointPath: string, config: PargsRootConfig) => Promise<string>} */
 export default async function getHelpText(realEntrypointPath, config) {
 	try {

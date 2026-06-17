@@ -109,11 +109,13 @@ type ValuesFromOptions<Options extends Record<string, PargsOptionConfig> | undef
 			// Optional options (no default)
 			-readonly [K in keyof Options as HasDefault<Options[K]> extends true ? never : K]?: OptionValueType<Options[K]>;
 		} & {
-			// help is always added
+			// help and version are always added
 			help: boolean;
+			version: boolean;
 		}
 		: {
 			help: boolean;
+			version: boolean;
 		};
 
 // Build the command result type from subcommands config

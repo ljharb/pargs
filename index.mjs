@@ -3,7 +3,7 @@ import { realpathSync } from 'fs';
 
 import isParseArgsError from './isParseArgsError.mjs';
 import maybeStripColors from './maybeStripColors.mjs';
-import getHelpText from './getHelpText.mjs';
+import getHelpText, { getVersion } from './getHelpText.mjs';
 
 const {
 	hasOwn,
@@ -87,6 +87,10 @@ export default async function pargs(entrypointPath, obj) {
 	const knownSubcommand = !!subcommands && hasOwn(subcommands, argv[0]);
 	const routeToDefault = !!subcommands && !knownSubcommand && typeof defaultCommand === 'string';
 
+	// `version` is provided automatically, but a user-defined `version` option
+	// (with its own handling) is preferred over the built-in one.
+	const hasUserVersion = !!passedConfig.options && 'version' in passedConfig.options;
+
 	const enums = { __proto__: null };
 	const numbers = { __proto__: null };
 
@@ -115,6 +119,14 @@ export default async function pargs(entrypointPath, obj) {
 	}).concat([
 		[
 			'help',
+			{
+				default: false,
+				type: 'boolean',
+			},
+		],
+	]).concat(hasUserVersion ? [] : [
+		[
+			'version',
 			{
 				default: false,
 				type: 'boolean',
@@ -161,22 +173,6 @@ export default async function pargs(entrypointPath, obj) {
 			}
 			results.values[key] = isArray(value) ? nums : nums[0];
 		});
-
-		async function help() {
-			if (('help' in results.values && results.values.help) || errors.length > 0) {
-				const helpText = maybeStripColors(`${(await getHelpText(realEntrypointPath, obj)).trim()}\n`);
-				if (errors.length === 0) {
-					console.log(helpText);
-				} else {
-					console.log(`${helpText}\n`);
-
-					process.exitCode ||= parseInt('1'.repeat(errors.length), 2);
-					errors.forEach((error) => console.error(error));
-				}
-
-				process.exit();
-			}
-		}
 
 		const { allowPositionals, minPositionals } = passedConfig;
 
@@ -237,12 +233,37 @@ export default async function pargs(entrypointPath, obj) {
 			}
 		}
 
+		// `--help`/`--version` (and errors) apply at the invoked level: a routed
+		// default command is still "the root", so honor its flags with the root
+		// (command-listing) help rather than the default command's own help.
+		const helpValues = routeToDefault && command ? command.values : results.values;
+		const helpErrors = routeToDefault && command ? command.errors : errors;
+		async function help() {
+			if (!hasUserVersion && helpValues.version) {
+				console.log(await getVersion(realEntrypointPath));
+				process.exit();
+			}
+			if (('help' in helpValues && helpValues.help) || helpErrors.length > 0) {
+				const helpText = maybeStripColors(`${(await getHelpText(realEntrypointPath, obj)).trim()}\n`);
+				if (helpErrors.length === 0) {
+					console.log(helpText);
+				} else {
+					console.log(`${helpText}\n`);
+
+					process.exitCode ||= parseInt('1'.repeat(helpErrors.length), 2);
+					helpErrors.forEach((error) => console.error(error));
+				}
+
+				process.exit();
+			}
+		}
+
 		return {
 			help,
 			errors,
 			...results,
 			...command && {
-				help: command.help,
+				help: routeToDefault ? help : command.help,
 				command: {
 					name: commandName,
 					...command,
