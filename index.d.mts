@@ -33,6 +33,7 @@ export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositi
 
 export type PargsRootConfig = PargsConfig & {
 	subcommands?: Record<string, PargsConfig>
+	defaultCommand?: string
 };
 
 export type ParseArgsError = NodeJS.ErrnoException & {

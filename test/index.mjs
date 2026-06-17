@@ -308,6 +308,104 @@ test('pargs - subcommands functionality', async (t) => {
 	});
 });
 
+test('pargs - default subcommand', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const helpPath = join(testDir, 'help.txt');
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await Promise.all([
+		writeFile(helpPath, 'Test help text'),
+		writeFile(entrypoint, '// test file'),
+	]);
+
+	t.test('routes a non-subcommand positional to the default command', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'some-input', '--json'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			subcommands: {
+				run: {
+					options: { json: { type: 'boolean' } },
+					allowPositionals: 1,
+				},
+			},
+		});
+		st.equal(result.command.name, 'run', 'routed to the default command');
+		st.equal(result.command.values.json, true, 'default command parsed its option');
+		st.deepEqual(result.command.positionals, ['some-input'], 'default command received the positional');
+		st.equal(result.errors.length, 0, 'no errors');
+	});
+
+	t.test('routes a flag-first invocation to the default command', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--json'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			subcommands: {
+				run: { options: { json: { type: 'boolean' } } },
+			},
+		});
+		st.equal(result.command.name, 'run', 'routed to default with a leading flag');
+		st.equal(result.command.values.json, true, 'parsed the flag against the default command');
+		st.equal(result.errors.length, 0, 'no errors');
+	});
+
+	t.test('routes a bare invocation (no args) to the default command', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			subcommands: {
+				run: { options: { json: { type: 'boolean', default: false } } },
+			},
+		});
+		st.equal(result.command.name, 'run', 'routed to default when no args are given');
+		st.equal(result.command.values.json, false, 'used the default option value');
+		st.equal(result.errors.length, 0, 'no errors');
+	});
+
+	t.test('a known subcommand takes precedence over the default command', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'other', '--verbose'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			subcommands: {
+				run: {},
+				other: { options: { verbose: { type: 'boolean' } } },
+			},
+		});
+		st.equal(result.command.name, 'other', 'used the explicitly named subcommand');
+		if (result.command.name === 'other') {
+			st.equal(result.command.values.verbose, true, 'parsed the named subcommand option');
+		}
+		st.equal(result.errors.length, 0, 'no errors');
+	});
+});
+
+test('pargs - defaultCommand validation', async (t) => {
+	try {
+		await pargs(filename, { defaultCommand: 'run' });
+		t.fail('should have thrown');
+	} catch (e) {
+		t.ok(e instanceof TypeError, 'throws when defaultCommand is set without subcommands');
+		t.match(
+			String(e && typeof e === 'object' && 'message' in e && e.message),
+			/defaultCommand.*subcommands/i,
+			'error message mentions subcommands',
+		);
+	}
+
+	try {
+		await pargs(filename, { defaultCommand: 'missing', subcommands: { run: {} } });
+		t.fail('should have thrown');
+	} catch (e) {
+		t.ok(e instanceof TypeError, 'throws when defaultCommand is not a subcommand key');
+		t.match(
+			String(e && typeof e === 'object' && 'message' in e && e.message),
+			/defaultCommand.*key/i,
+			'error message mentions it must be a key',
+		);
+	}
+});
+
 test('pargs - allowPositionals functionality', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));
@@ -607,6 +705,17 @@ test('pargs - number type validation', async (t) => {
 		});
 		st.deepEqual(result.values.port, [80, 443], 'coerces numeric array defaults to numbers');
 		st.equal(result.errors.length, 0, 'no errors with numeric array defaults');
+	});
+
+	t.test('number not provided without default', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				port: { type: 'number' },
+			},
+		});
+		st.notOk('port' in result.values, 'port is absent when not provided and no default');
+		st.equal(result.errors.length, 0, 'no errors when an optional number is omitted');
 	});
 
 	t.test('number with multiple', async (st) => {

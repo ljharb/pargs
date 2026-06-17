@@ -55,7 +55,11 @@ export default async function pargs(entrypointPath, obj) {
 		throw new TypeError('Error: `subcommands` must be an object');
 	}
 
-	const { subcommands, ...passedConfig } = obj;
+	const {
+		subcommands,
+		defaultCommand,
+		...passedConfig
+	} = obj;
 
 	if ('subcommands' in obj && keys(obj.subcommands).length === 0) {
 		throw new TypeError('Error: `subcommands` must be an object with at least one key');
@@ -68,6 +72,21 @@ export default async function pargs(entrypointPath, obj) {
 	if ('subcommands' in obj && 'minPositionals' in passedConfig) {
 		throw new TypeError('Error: `minPositionals` is not allowed when `subcommands` is defined');
 	}
+
+	if ('defaultCommand' in obj) {
+		if (!subcommands) {
+			throw new TypeError('Error: `defaultCommand` is not allowed unless `subcommands` is defined');
+		}
+		if (!hasOwn(subcommands, defaultCommand)) {
+			throw new TypeError('Error: `defaultCommand` must be a key of `subcommands`');
+		}
+	}
+
+	// when subcommands are defined, the first arg selects the subcommand;
+	// if it is not a known subcommand, fall back to `defaultCommand`
+	// (parsing the full argv against it) when one is configured.
+	const knownSubcommand = !!subcommands && hasOwn(subcommands, argv[0]);
+	const routeToDefault = !!subcommands && !knownSubcommand && typeof defaultCommand === 'string';
 
 	const enums = { __proto__: null };
 	const numbers = { __proto__: null };
@@ -106,7 +125,7 @@ export default async function pargs(entrypointPath, obj) {
 
 	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions }} */
 	const newObj = {
-		args: subcommands ? argv.slice(0, 1) : argv,
+		args: subcommands ? routeToDefault ? [] : argv.slice(0, 1) : argv,
 		...passedConfig,
 		options: normalizedOptions,
 		tokens: true,
@@ -201,13 +220,20 @@ export default async function pargs(entrypointPath, obj) {
 
 		/** @type {undefined | PargsParsed<PargsConfig>} */
 		let command;
+		/** @type {string | undefined} */
+		let commandName;
 		if (subcommands) {
-			const subcommand = argv[0];
+			if (knownSubcommand) {
+				([commandName] = argv);
+				process.argv.splice(process.argv.indexOf(argv[0]), 1);
+			} else if (routeToDefault) {
+				commandName = defaultCommand;
+			}
 
-			if (hasOwn(/** @type {object} */ (subcommands), subcommand)) {
-				process.argv.splice(process.argv.indexOf(subcommand), 1);
-				command = await pargs(entrypointPath, subcommands[subcommand]);
+			if (typeof commandName === 'string') {
+				command = await pargs(entrypointPath, subcommands[commandName]);
 			} else {
+				const subcommand = argv[0];
 				errors[errors.length] = `Error: unknown command${subcommand ? ` "${subcommand}"` : ''}`;
 			}
 		}
@@ -219,7 +245,7 @@ export default async function pargs(entrypointPath, obj) {
 			...command && {
 				help: command.help,
 				command: {
-					name: argv[0],
+					name: commandName,
 					...command,
 				},
 			},
