@@ -117,6 +117,7 @@ test('pargs - version flag', async (t) => {
 
 	t.ok(helpError instanceof Error && helpError.message === 'EXIT', 'help() exits on --version');
 	t.ok(logs.some((log) => log.includes('4.5.6')), 'prints the package version');
+	t.ok(logs.some((log) => log.includes('v4.5.6')), 'version output is prefixed with `v`');
 	t.notOk(logs.some((log) => log.includes('Usage')), 'does not print help text for --version');
 
 	t.end();
@@ -526,6 +527,7 @@ test('pargs - defaultCommand: root --help and --version apply at the root', asyn
 		const logs = logCapture().map((call) => call.args.join(' '));
 
 		st.ok(logs.some((log) => log.includes('2.3.4')), 'prints the package version at the root level');
+		st.ok(logs.some((log) => log.includes('v2.3.4')), 'version output is prefixed with `v`');
 	});
 });
 

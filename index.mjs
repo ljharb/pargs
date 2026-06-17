@@ -240,7 +240,8 @@ export default async function pargs(entrypointPath, obj) {
 		const helpErrors = routeToDefault && command ? command.errors : errors;
 		async function help() {
 			if (!hasUserVersion && helpValues.version) {
-				console.log(await getVersion(realEntrypointPath));
+				const version = await getVersion(realEntrypointPath);
+				console.log(version ? `v${version}` : version);
 				process.exit();
 			}
 			if (('help' in helpValues && helpValues.help) || helpErrors.length > 0) {
