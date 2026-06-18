@@ -13,12 +13,12 @@ type EnumOptionConfig<C extends readonly string[] = readonly string[]> = Omit<Pa
 
 type NumberOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 	type: 'number';
-	default?: number | number[];
+	default?: number | readonly number[];
 };
 
 type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 	type: 'integer';
-	default?: number | number[];
+	default?: number | readonly number[];
 };
 
 export type PargsOptionConfig = (ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig) & {
@@ -46,22 +46,22 @@ export type DescriptionSection = {
 
 export type StructuredDescription = {
 	summary?: string;
-	examples?: DescriptionExample[];
-	sections?: DescriptionSection[];
+	examples?: readonly DescriptionExample[];
+	sections?: readonly DescriptionSection[];
 };
 
 export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositionals' | 'options'> & {
 	options?: {
-		[longOption: string]: PargsOptionConfig;
+		readonly [longOption: string]: PargsOptionConfig;
 	};
 	allowPositionals?: boolean | number;
 	minPositionals?: number;
-	positionals?: PositionalConfig[];
+	positionals?: readonly PositionalConfig[];
 	description?: string | StructuredDescription;
 };
 
 export type PargsRootConfig = PargsConfig & {
-	subcommands?: Record<string, PargsConfig>
+	subcommands?: Readonly<Record<string, PargsConfig>>
 	defaultCommand?: string
 };
 

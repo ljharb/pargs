@@ -47,7 +47,7 @@ function summaryLine(description) {
 	return `${text}`.split('\n')[0];
 }
 
-/** @type {(positionals: PositionalConfig[], min: number) => string[]} */
+/** @type {(positionals: readonly PositionalConfig[], min: number) => string[]} */
 function usagePositionals(positionals, min) {
 	return positionals.map((pos, i) => {
 		const inner = `${pos.name}${pos.rest ? '...' : ''}`;
