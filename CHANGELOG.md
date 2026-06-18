@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.4.1...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.4.2...v2.0.0) - 2025-10-24
+
+## [v1.4.2](https://github.com/ljharb/pargs/compare/v1.4.1...v1.4.2) - 2026-06-18
+
+### Commits
+
+- [types] allow readonly option types [`fb3f28c`](https://github.com/ljharb/pargs/commit/fb3f28cd1f162f2cf2785b32bca7892b4de76409)
+- [Dev Deps] update `c8` [`d5f9572`](https://github.com/ljharb/pargs/commit/d5f9572b2206f73dc93e616ea71b2387fb8d5d49)
 
 ## [v1.4.1](https://github.com/ljharb/pargs/compare/v1.4.0...v1.4.1) - 2026-06-18
 
