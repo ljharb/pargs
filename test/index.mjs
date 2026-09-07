@@ -1201,6 +1201,131 @@ test('pargs - argv filtering', async (t) => {
 	);
 });
 
+test('pargs - `args`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await writeFile(entrypoint, '// test file');
+
+	t.test('an explicit `args` beats `process.argv`', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
+		const result = await pargs(entrypoint, {
+			args: ['--flag', 'FROM_ARGS'],
+			options: { flag: { type: 'string' } },
+		});
+		st.equal(result.values.flag, 'FROM_ARGS', 'the provided `args` is used');
+	});
+
+	t.test('an empty `args` parses nothing', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
+		const result = await pargs(entrypoint, {
+			args: [],
+			options: { flag: { type: 'string' } },
+		});
+		st.equal('flag' in result.values, false, 'nothing is parsed');
+	});
+
+	t.test('an explicitly `undefined` `args` falls back to `process.argv`', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
+		const result = await pargs(entrypoint, {
+			args: undefined,
+			options: { flag: { type: 'string' } },
+		});
+		st.equal(result.values.flag, 'FROM_ARGV', '`process.argv` is used');
+	});
+
+	t.test('an explicit `args` is not filtered', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: [process.execPath, entrypoint],
+			allowPositionals: true,
+		});
+		st.deepEqual(result.positionals, [process.execPath, entrypoint], 'the node binary and the entrypoint survive');
+	});
+
+	t.test('`args` governs subcommand routing, and `process.argv` is untouched', async (st) => {
+		const argv = [process.execPath, entrypoint, 'build', '--verbose'];
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: argv });
+		const result = await pargs(entrypoint, {
+			args: ['test', '--watch'],
+			subcommands: {
+				build: { options: { verbose: { type: 'boolean' } } },
+				test: { options: { watch: { type: 'boolean' } } },
+			},
+		});
+		st.equal(result.command.name, 'test', '`args` selects the subcommand');
+		st.equal(/** @type {{ watch?: boolean }} */ (result.command.values).watch, true, 'the subcommand parses its own options');
+		st.deepEqual(process.argv, argv, '`process.argv` is not spliced');
+	});
+
+	t.test('`args` routes to `defaultCommand`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--verbose'],
+			defaultCommand: 'build',
+			subcommands: {
+				build: { options: { verbose: { type: 'boolean' } } },
+			},
+		});
+		st.equal(result.command.name, 'build', 'routes to the default command');
+		st.equal(result.command.values.verbose, true, 'the whole list is parsed against it');
+	});
+
+	// nested `subcommands` work at runtime, but `PargsConfig` does not declare them
+	/** @typedef {{ command: { name: string, command: { name: string, values: { url?: string } } } }} NestedResult */
+	/** @type {(config: Record<string, unknown>) => Promise<NestedResult>} */
+	const parseNested = (config) => /** @type {Promise<NestedResult>} */ (
+		/** @type {unknown} */ (pargs(entrypoint, /** @type {never} */ (config)))
+	);
+
+	const nested = {
+		remote: {
+			subcommands: {
+				add: { options: { url: { type: 'string' } } },
+			},
+		},
+	};
+
+	t.test('`args` routes through nested subcommands', async (st) => {
+		const result = await parseNested({
+			args: ['remote', 'add', '--url', 'U'],
+			subcommands: nested,
+		});
+		st.equal(result.command.name, 'remote', 'the outer subcommand is selected');
+		st.equal(result.command.command.name, 'add', 'the inner subcommand is selected');
+		st.equal(result.command.command.values.url, 'U', 'the leaf parses its own options');
+	});
+
+	t.test('nested subcommands still splice `process.argv` when no `args` is given', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'remote', 'add', '--url', 'U'] });
+		const result = await parseNested({ subcommands: nested });
+		st.equal(result.command.command.values.url, 'U', 'the leaf still parses its own options');
+		st.deepEqual(process.argv, [process.execPath, entrypoint, '--url', 'U'], 'every subcommand name is spliced out');
+	});
+
+	t.test('a non-array `args` throws', async (st) => {
+		try {
+			await pargs(entrypoint, { args: /** @type {never} */ ('nope') });
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`args`/, 'the message mentions `args`');
+		}
+	});
+
+	t.test('the reserved `help` check comes first', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				args: /** @type {never} */ ('nope'),
+				options: { help: /** @type {never} */ ({ type: 'boolean' }) },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.match(/** @type {Error} */ (e).message, /help.*reserved/i, 'the reserved-help error wins');
+		}
+	});
+});
+
 test('pargs - boolean type validation', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

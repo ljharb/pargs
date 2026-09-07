@@ -50,7 +50,7 @@ export type StructuredDescription = {
 	sections?: readonly DescriptionSection[];
 };
 
-export type PargsConfig = Omit<ParseArgsConfig, 'args' | 'strict' | 'allowPositionals' | 'options'> & {
+export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 'options'> & {
 	options?: {
 		readonly [longOption: string]: PargsOptionConfig;
 	};

@@ -27,10 +27,26 @@ const {
  * } from './index.d.mts'
  */
 
+// a recursive call uses this to tell a subcommand whether the `process.argv`
+// splice is still its to perform; it can not be expressed in the public config
+const kMutateArgv = Symbol('pargs: may splice process.argv');
+
 /** @type {import('./index.d.mts').default} */
 export default async function pargs(entrypointPath, obj) {
 	const realEntrypointPath = realpathSync(entrypointPath);
-	const argv = process.argv.flatMap((arg) => {
+
+	if ('help' in obj || (obj.options && 'help' in obj.options)) {
+		throw new TypeError('The "help" option is reserved');
+	}
+
+	const hasArgs = typeof obj.args !== 'undefined';
+	if (hasArgs && !isArray(obj.args)) {
+		throw new TypeError('Error: `args`, when provided, must be an array');
+	}
+
+	// an explicit `args` is already the caller's argument list: there is no node
+	// binary or entrypoint prefix to strip, so it is used verbatim.
+	const argv = hasArgs ? from(obj.args, String) : process.argv.flatMap((arg) => {
 		try {
 			const realpathedArg = realpathSync(arg);
 			if (
@@ -42,10 +58,6 @@ export default async function pargs(entrypointPath, obj) {
 		} catch { /**/ }
 		return arg;
 	});
-
-	if ('help' in obj || (obj.options && 'help' in obj.options)) {
-		throw new TypeError('The "help" option is reserved');
-	}
 
 	/** @type {string[]} */
 	const errors = [];
@@ -136,8 +148,8 @@ export default async function pargs(entrypointPath, obj) {
 
 	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions }} */
 	const newObj = {
-		args: subcommands ? routeToDefault ? [] : argv.slice(0, 1) : argv,
 		...passedConfig,
+		args: subcommands ? routeToDefault ? [] : argv.slice(0, 1) : argv,
 		options: normalizedOptions,
 		tokens: true,
 		allowNegative: true,
@@ -220,16 +232,27 @@ export default async function pargs(entrypointPath, obj) {
 		let command;
 		/** @type {string | undefined} */
 		let commandName;
+		// the top level owns the `process.argv` splice, and only when it is the
+		// thing being parsed; a nested call inherits the answer from its parent.
+		const mayMutateArgv = hasOwn(obj, kMutateArgv) ? obj[kMutateArgv] : !hasArgs;
 		if (subcommands) {
 			if (knownSubcommand) {
 				([commandName] = argv);
-				process.argv.splice(process.argv.indexOf(argv[0]), 1);
+				if (mayMutateArgv) {
+					process.argv.splice(process.argv.indexOf(argv[0]), 1);
+				}
 			} else if (routeToDefault) {
 				commandName = defaultCommand;
 			}
 
 			if (typeof commandName === 'string') {
-				command = await pargs(entrypointPath, subcommands[commandName]);
+				// the parent's routing decides what the subcommand sees, so its args are
+				// injected after the subcommand's own config, not before it
+				command = await pargs(entrypointPath, {
+					...subcommands[commandName],
+					args: knownSubcommand ? argv.slice(1) : argv,
+					[kMutateArgv]: mayMutateArgv,
+				});
 			} else {
 				const subcommand = argv[0];
 				errors[errors.length] = `Error: unknown command${subcommand ? ` "${subcommand}"` : ''}`;

@@ -62,7 +62,7 @@ See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilp
 
  - `strict`: can not be set to `false` - strictness all the way.
  - `allowNegative`: can not be set to `false`.
- - `args`: can not provide; pargs always uses `process.cwd()` - this may be added in the future, though.
+ - `args`: when omitted, pargs uses `process.argv`, with the node binary and the entrypoint filtered out. When provided, it is the argument list, used verbatim - nothing is filtered out of it, each element is coerced with `String`, and a non-array throws. An explicit `args` also governs subcommand and `defaultCommand` routing, and suppresses the `process.argv` mutation that subcommand routing otherwise performs. A subcommand's own `args`, if it declares one, is overridden by the parent's routing.
  - `options.type`: in addition to `'boolean'` and `'string'`:
    - `'enum'`: when provided, a `choices` string array is also required. The value is validated only when one is present - an option that was not passed and has no `default` is not an error. With `multiple`, each element is validated individually.
    - `'number'`: validates the value is a finite number and coerces it from a string.
