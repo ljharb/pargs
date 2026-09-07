@@ -62,6 +62,7 @@ See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilp
 
  - `strict`: can not be set to `false` - strictness all the way.
  - `allowNegative`: can not be set to `false`.
+ - `negation`: `'exclusive'` (the default) reports an error when both `--x` and `--no-x` appear in the same invocation; `'last-wins'` suppresses that error and leaves the parsed value alone, so the last occurrence wins for a scalar boolean, and every occurrence is collected for a `multiple` one. May be set at the root, or per-option (`options[name].negation`) to override the root; it does not inherit into subcommands. The reserved `--help` and `--version` are unaffected - `--no-help` is always an unknown option.
  - `args`: when omitted, pargs uses `process.argv`, with the node binary and the entrypoint filtered out. When provided, it is the argument list, used verbatim - nothing is filtered out of it, each element is coerced with `String`, and a non-array throws. An explicit `args` also governs subcommand and `defaultCommand` routing, and suppresses the `process.argv` mutation that subcommand routing otherwise performs. A subcommand's own `args`, if it declares one, is overridden by the parent's routing.
  - `options.type`: in addition to `'boolean'` and `'string'`:
    - `'enum'`: when provided, a `choices` string array is also required. The value is validated only when one is present - an option that was not passed and has no `default` is not an error. With `multiple`, each element is validated individually.

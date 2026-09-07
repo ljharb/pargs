@@ -69,8 +69,13 @@ export default async function pargs(entrypointPath, obj) {
 	const {
 		subcommands,
 		defaultCommand,
+		negation: rootNegation,
 		...passedConfig
 	} = obj;
+
+	if (typeof rootNegation !== 'undefined' && rootNegation !== 'exclusive' && rootNegation !== 'last-wins') {
+		throw new TypeError('Error: `negation` must be either "exclusive" or "last-wins"');
+	}
 
 	if ('subcommands' in obj && keys(obj.subcommands).length === 0) {
 		throw new TypeError('Error: `subcommands` must be an object with at least one key');
@@ -108,6 +113,10 @@ export default async function pargs(entrypointPath, obj) {
 
 	/** @type {{ options: ParseArgsConfig['options'] & { help: { default: false, type: 'boolean' } } }} */
 	const normalizedOptions = fromEntries(entries(passedConfig.options ?? {}).flatMap(([key, value]) => {
+		if (typeof value.negation !== 'undefined' && value.negation !== 'exclusive' && value.negation !== 'last-wins') {
+			throw new TypeError(`Error: \`negation\` must be either "exclusive" or "last-wins"; \`${key}\` is invalid`);
+		}
+
 		if (value.type === 'enum') {
 			if (!isArray(value.choices) || !value.choices.every((x) => typeof x === 'string')) {
 				throw new TypeError(`Error: enum choices must be an array of strings; \`${key}\` is invalid`);
@@ -209,8 +218,9 @@ export default async function pargs(entrypointPath, obj) {
 
 		const groups = groupBy(passedArgs, (x) => x.replace(/^no-/, ''));
 		for (let i = 0; i < bools.length; i++) {
-			const [key] = bools[i];
-			if ((groups[key]?.length ?? 0) > 1) {
+			const [key, boolConfig] = bools[i];
+			const negation = typeof boolConfig.negation === 'undefined' ? rootNegation : boolConfig.negation;
+			if (negation !== 'last-wins' && (groups[key]?.length ?? 0) > 1) {
 				errors[errors.length] = `Error: Arguments \`--${key}\` and \`--no-${key}\` are mutually exclusive`;
 			}
 			// handle --no-* negation

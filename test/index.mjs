@@ -304,6 +304,124 @@ test('pargs - boolean option mutual exclusivity', async (t) => {
 	});
 });
 
+test('pargs - `negation`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await writeFile(entrypoint, '// test file');
+
+	t.test('the default is still exclusive', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--verbose', '--no-verbose'],
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.deepEqual(
+			result.errors,
+			['Error: Arguments `--verbose` and `--no-verbose` are mutually exclusive'],
+			'both forms together is an error by default',
+		);
+	});
+
+	t.test('root `last-wins` keeps the last occurrence', async (st) => {
+		const positive = await pargs(entrypoint, {
+			args: ['--no-verbose', '--verbose'],
+			negation: 'last-wins',
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.deepEqual(positive.errors, [], 'no error');
+		st.equal(positive.values.verbose, true, '`--verbose` last wins');
+
+		const negative = await pargs(entrypoint, {
+			args: ['--verbose', '--no-verbose'],
+			negation: 'last-wins',
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.deepEqual(negative.errors, [], 'no error');
+		st.equal(negative.values.verbose, false, '`--no-verbose` last wins');
+	});
+
+	t.test('root `last-wins` covers the short form', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-v', '--no-verbose'],
+			negation: 'last-wins',
+			options: { verbose: { type: 'boolean', short: 'v' } },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.equal(result.values.verbose, false, '`--no-verbose` last wins over `-v`');
+	});
+
+	t.test('a per-option `negation` overrides the root', async (st) => {
+		const exclusive = await pargs(entrypoint, {
+			args: ['--verbose', '--no-verbose', '--debug', '--no-debug'],
+			negation: 'last-wins',
+			options: {
+				verbose: { type: 'boolean' },
+				debug: { type: 'boolean', negation: 'exclusive' },
+			},
+		});
+		st.deepEqual(
+			exclusive.errors,
+			['Error: Arguments `--debug` and `--no-debug` are mutually exclusive'],
+			'only the option that opted back in errors',
+		);
+
+		const lastWins = await pargs(entrypoint, {
+			args: ['--verbose', '--no-verbose', '--debug', '--no-debug'],
+			options: {
+				verbose: { type: 'boolean' },
+				debug: { type: 'boolean', negation: 'last-wins' },
+			},
+		});
+		st.deepEqual(
+			lastWins.errors,
+			['Error: Arguments `--verbose` and `--no-verbose` are mutually exclusive'],
+			'only the option that did not opt out errors',
+		);
+	});
+
+	t.test('a per-option `undefined` inherits the root', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--verbose', '--no-verbose'],
+			negation: 'last-wins',
+			options: { verbose: { type: 'boolean', negation: undefined } },
+		});
+		st.deepEqual(result.errors, [], 'the root policy applies');
+	});
+
+	t.test('the reserved options are unaffected', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--help', '--no-help'],
+			negation: 'last-wins',
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.deepEqual(result.errors, ['Error: Unknown option(s): `no-help`'], '`--no-help` is still unknown');
+	});
+
+	t.test('an invalid root value throws', async (st) => {
+		try {
+			await pargs(entrypoint, { negation: /** @type {never} */ ('nope') });
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`negation`/, 'the message mentions `negation`');
+		}
+	});
+
+	t.test('an invalid per-option value throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				options: { verbose: { type: 'boolean', negation: /** @type {never} */ ('nope') } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`verbose` is invalid/, 'the message names the option');
+		}
+	});
+});
+
 test('pargs - unknown options detection', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

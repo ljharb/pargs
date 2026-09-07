@@ -21,11 +21,14 @@ type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 	default?: number | readonly number[];
 };
 
+export type NegationPolicy = 'exclusive' | 'last-wins';
+
 export type PargsOptionConfig = (ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig) & {
 	description?: string;
 	placeholder?: string;
 	group?: string;
 	defaultDescription?: string;
+	negation?: NegationPolicy;
 };
 
 export type PositionalConfig = {
@@ -58,6 +61,7 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 	minPositionals?: number;
 	positionals?: readonly PositionalConfig[];
 	description?: string | StructuredDescription;
+	negation?: NegationPolicy;
 };
 
 export type PargsRootConfig = PargsConfig & {
