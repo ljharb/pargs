@@ -210,7 +210,7 @@ export default async function pargs(entrypointPath, obj) {
 			if (typeof value === 'undefined') {
 				return;
 			}
-			if (![].concat(/** @type {never} */ (value)).every((v) => config.choices.includes(v))) {
+			if (![].concat(value).every((v) => config.choices.includes(v))) {
 				errors[errors.length] = `Error: Invalid value for option "${key}"`;
 			}
 		});
