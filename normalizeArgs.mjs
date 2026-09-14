@@ -23,7 +23,7 @@ function hasOptionalValue(config) {
 
 /** @type {(config: any) => boolean} */
 function hasArity(config) {
-	return !!config.greedy || hasOptionalValue(config);
+	return !!config.greedy || hasOptionalValue(config) || !!config.variadic;
 }
 
 // A bare occurrence of an `optionalValue: true` option carries the sentinel
@@ -85,15 +85,14 @@ function pushOption(state) {
 	const next = args[i + 1];
 	// a long option takes `=value`; a short one takes the value attached
 	const glue = arg[1] === '-' ? '=' : '';
+	let j;
 	if (isValueLike(next)) {
 		out.push(arg, next);
-		return i + 2;
-	}
-	if (config.greedy && typeof next === 'string' && next !== '--') {
+		j = i + 2;
+	} else if (config.greedy && typeof next === 'string' && next !== '--') {
 		out[out.length] = `${arg}${glue}${next}`;
-		return i + 2;
-	}
-	if (hasOptionalValue(config)) {
+		j = i + 2;
+	} else if (hasOptionalValue(config)) {
 		// `parseArgs` has no optional-value arity, so a bare occurrence is given
 		// one: either the string the config named, or the sentinel standing in for
 		// "passed with no value"
@@ -109,10 +108,21 @@ function pushOption(state) {
 		} else {
 			out[out.length] = `${arg}${glue}${injected}`;
 		}
-		return i + 1;
+		j = i + 1;
+	} else {
+		out[out.length] = arg;
+		j = i + 1;
 	}
-	out[out.length] = arg;
-	return i + 1;
+	if (config.variadic) {
+		// keep collecting the run as repeated occurrences, which is the shape
+		// `multiple` already understands; `greedy` widens what counts as a value,
+		// so that it governs the whole run rather than only its first element
+		while (typeof args[j] === 'string' && args[j] !== '--' && (config.greedy || isValueLike(args[j]))) {
+			out[out.length] = `--${name}=${args[j]}`;
+			j += 1;
+		}
+	}
+	return j;
 }
 
 /** @type {(args: string[], options: Record<string, any>) => string[]} */

@@ -1262,6 +1262,166 @@ test('pargs - `optionalValue`', async (t) => {
 	});
 });
 
+test('pargs - `variadic`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file');
+
+	/** @type {(args: string[], extra?: Record<string, unknown>, rest?: Record<string, unknown>) => Promise<any>} */
+	const parse = (args, extra, rest) => pargs(entrypoint, /** @type {never} */ ({
+		args,
+		allowPositionals: true,
+		...rest,
+		options: {
+			plugins: { type: 'string', variadic: true, ...extra },
+			unreleased: { type: 'boolean', short: 'u' },
+		},
+	}));
+
+	t.test('collects a run of values from one occurrence', async (st) => {
+		st.deepEqual((await parse(['--plugins', 'foo', 'bar'])).values.plugins, ['foo', 'bar'], 'a run is collected');
+		st.deepEqual((await parse(['--plugins', 'foo'])).values.plugins, ['foo'], 'a single value is still an array');
+		st.deepEqual((await parse(['--plugins=foo'])).values.plugins, ['foo'], 'an attached value does not start a run');
+		st.deepEqual((await parse(['--plugins', 'a=b', 'c=d'])).values.plugins, ['a=b', 'c=d'], '`=` inside values is fine');
+		st.deepEqual((await parse(['--plugins', ''])).values.plugins, [''], 'an empty value is kept');
+	});
+
+	t.test('still accepts repeated occurrences', async (st) => {
+		st.deepEqual((await parse(['--plugins', 'foo', '--plugins', 'bar'])).values.plugins, ['foo', 'bar'], 'repeats accumulate');
+	});
+
+	t.test('stops at the right places', async (st) => {
+		const terminator = await parse(['--plugins', 'foo', '--', 'bar']);
+		st.deepEqual(terminator.values.plugins, ['foo'], 'the run stops at `--`');
+		st.deepEqual(terminator.positionals, ['bar'], 'and the rest is positional');
+
+		const option = await parse(['--plugins', 'foo', '--unreleased']);
+		st.deepEqual(option.values.plugins, ['foo'], 'the run stops at the next option');
+		st.equal(option.values.unreleased, true, 'which still parses');
+
+		const leading = await parse(['a', 'b', '--plugins', 'x', 'y']);
+		st.deepEqual(leading.positionals, ['a', 'b'], 'positionals before the option are untouched');
+		st.deepEqual(leading.values.plugins, ['x', 'y'], 'and the run is still collected');
+	});
+
+	t.test('a lone dash is a value', async (st) => {
+		st.deepEqual((await parse(['--plugins', '-'])).values.plugins, ['-'], 'as the first value');
+		st.deepEqual((await parse(['--plugins', 'foo', '-', 'bar'])).values.plugins, ['foo', '-', 'bar'], 'and mid-run');
+	});
+
+	t.test('a bare occurrence still requires a value', async (st) => {
+		st.match((await parse(['--plugins'])).errors[0], /argument missing/, 'without `optionalValue`, bare is an error');
+	});
+
+	t.test('combines with `optionalValue`', async (st) => {
+		const extra = { optionalValue: true };
+		st.equal((await parse(['--plugins'], extra)).values.plugins, true, 'a bare occurrence yields the scalar');
+		st.deepEqual((await parse(['--plugins', '--plugins', 'foo'], extra)).values.plugins, ['foo'], 'a bare one contributes nothing');
+		st.equal((await parse(['--plugins', '--plugins'], extra)).values.plugins, true, 'all-bare collapses to the scalar');
+	});
+
+	t.test('combines with `greedy`, for the whole run', async (st) => {
+		const extra = { greedy: true };
+		st.deepEqual((await parse(['--plugins', 'x', '-y', 'z'], extra)).values.plugins, ['x', '-y', 'z'], 'dash-leading values mid-run');
+		st.deepEqual((await parse(['--plugins', '1', '-2', '3'], extra)).values.plugins, ['1', '-2', '3'], 'negative numbers survive');
+
+		// `greedy` widens what counts as a value, so the explicit `--` check is the
+		// only thing left stopping the run; without it the terminator is collected
+		const terminated = await parse(['--plugins', 'a', '--', 'b'], extra);
+		st.deepEqual(terminated.values.plugins, ['a'], 'the run still stops at `--`');
+		st.deepEqual(terminated.positionals, ['b'], 'and what follows it is positional');
+	});
+
+	t.test('coerces and validates like any other option', async (st) => {
+		const nums = await pargs(entrypoint, {
+			args: ['--n', '1', '2', '3'],
+			options: { n: { type: 'number', variadic: true } },
+		});
+		st.deepEqual(nums.values.n, [1, 2, 3], 'a variadic number is coerced element-wise');
+
+		const levels = await pargs(entrypoint, {
+			args: ['--level', 'debug', 'info'],
+			options: { level: { type: 'enum', choices: ['debug', 'info'], variadic: true } },
+		});
+		st.deepEqual(levels.values.level, ['debug', 'info'], 'a variadic enum collects');
+		st.deepEqual(levels.errors, [], 'and validates element-wise');
+	});
+
+	t.test('respects the positional policy', async (st) => {
+		// the run belongs to the option, so those tokens are not positionals - and
+		// `minPositionals` must judge what is left, not what was typed
+		const swallowed = await parse(['--plugins', 'a', 'b'], undefined, { minPositionals: 2 });
+		st.deepEqual(swallowed.values.plugins, ['a', 'b'], 'the run went to the option');
+		st.deepEqual(swallowed.positionals, [], 'leaving no positionals behind');
+		st.ok(
+			swallowed.errors.some((/** @type {string} */ e) => (/positional/i).test(e)),
+			'so `minPositionals` is not satisfied',
+		);
+
+		// real positionals alongside a run still count
+		const satisfied = await parse(['x', 'y', '--plugins', 'a'], undefined, { minPositionals: 2 });
+		st.deepEqual(satisfied.positionals, ['x', 'y'], 'they are reported');
+		st.deepEqual(satisfied.errors, [], 'and the policy is satisfied');
+	});
+
+	t.test('wraps a scalar `default`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: [],
+			options: { plugins: { type: 'string', variadic: true, default: 'one' } },
+		});
+		st.deepEqual(result.values.plugins, ['one'], 'a scalar default is wrapped rather than throwing');
+	});
+
+	t.test('routes through subcommands', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['build', '--plugins', 'a', 'b'],
+			subcommands: { build: { options: { plugins: { type: 'string', variadic: true } } } },
+		});
+		st.deepEqual(result.command.values.plugins, ['a', 'b'], 'a subcommand gets its own normalizing');
+	});
+
+	t.test('invalid configurations throw', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				// @ts-expect-error `variadic` implies `multiple: true`
+				options: { plugins: { type: 'string', variadic: true, multiple: false } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.match(/** @type {Error} */ (e).message, /`variadic` implies `multiple`/, '`multiple: false` is rejected');
+		}
+
+		try {
+			await pargs(entrypoint, {
+				// @ts-expect-error `variadic` is not allowed on a boolean option
+				options: { flag: { type: 'boolean', variadic: true } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.match(/** @type {Error} */ (e).message, /not allowed on a boolean/, 'a boolean option is rejected');
+		}
+
+		const explicit = await pargs(entrypoint, {
+			args: ['--plugins', 'a', 'b'],
+			options: { plugins: { type: 'string', variadic: true, multiple: true } },
+		});
+		st.deepEqual(explicit.values.plugins, ['a', 'b'], 'an explicit `multiple: true` is accepted');
+	});
+
+	t.test('`generateHelp` renders the ellipsis', (st) => {
+		const plain = generateHelp('cli', { options: { plugins: { type: 'string', variadic: true, placeholder: 'name' } } });
+		st.match(plain, /--plugins <name>\.\.\./, 'a variadic option shows `...`');
+
+		const optional = generateHelp('cli', {
+			options: { plugins: { type: 'string', variadic: true, optionalValue: true, placeholder: 'name' } },
+		});
+		st.match(optional, /--plugins \[name\]\.\.\./, 'with `optionalValue`, square brackets and `...`');
+		st.end();
+	});
+});
+
 test('normalizeArgs', (t) => {
 	const options = {
 		log: { type: 'string', greedy: true },

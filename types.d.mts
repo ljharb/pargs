@@ -59,6 +59,30 @@ type ArityKeys = {
 };
 
 /**
+ * `variadic` implies `multiple: true`, so `multiple: false` alongside it is a
+ * contradiction rather than a preference, and is rejected here as well as at
+ * runtime.
+ */
+type VariadicKey =
+	| {
+		/**
+		 * One occurrence collects every following value-like argument, so
+		 * `--plugins a b c` yields all three. Implies `multiple: true`.
+		 *
+		 * @deprecated a migration aid, so an existing CLI can keep an argv shape
+		 * `util.parseArgs` deliberately does not support. New code should take
+		 * `multiple` and a repeated option - `--plugins a --plugins b` - which is
+		 * unambiguous about where the list ends.
+		 */
+		variadic?: false | undefined;
+	}
+	| {
+		/** @deprecated see the `variadic` docs on the non-variadic branch */
+		variadic: true;
+		multiple?: true;
+	};
+
+/**
  * A `boolean` option already has the shape the arity keys exist to produce, so
  * none of them applies to one; declaring one is rejected here as well as at
  * runtime.
@@ -66,11 +90,12 @@ type ArityKeys = {
 type NoArityKeys = {
 	greedy?: never;
 	optionalValue?: never;
+	variadic?: never;
 };
 
 export type PargsOptionConfig =
 	| (BooleanOptionConfig & OptionMeta & NoArityKeys)
-	| (ValueOptionConfig & OptionMeta & ArityKeys);
+	| (ValueOptionConfig & OptionMeta & ArityKeys & VariadicKey);
 
 export type PositionalConfig = {
 	name: string;
@@ -165,7 +190,9 @@ type BaseValueType<O extends PargsOptionConfig> =
 type ListValueType<O extends PargsOptionConfig> =
 	O extends { multiple: true }
 		? BaseValueType<O>[]
-		: BaseValueType<O>;
+		: O extends { variadic: true }
+			? BaseValueType<O>[]
+			: BaseValueType<O>;
 
 // `optionalValue: true` adds `true` for the bare form; a string `optionalValue`
 // is injected as an ordinary value, so it does not widen the type

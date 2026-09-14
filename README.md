@@ -92,6 +92,13 @@ In TypeScript, `options` is a union discriminated on `type`, so a table hoisted 
    - `'enum'`: when provided, a `choices` string array is also required. The value is validated only when one is present - an option that was not passed and has no `default` is not an error. With `multiple`, each element is validated individually.
    - `'number'`: validates the value is a finite number and coerces it from a string.
    - `'integer'`: validates the value is a finite integer and coerces it from a string.
+ - `options[name].variadic`: **deprecated**, and marked `@deprecated` in the types - it exists so a CLI moving onto pargs can keep an argv shape `util.parseArgs` deliberately does not support, and new code should take `multiple` with a repeated option (`--plugins a --plugins b`), which is unambiguous about where the list ends.
+One occurrence collects every following value-like argument, so `--plugins a b c` yields all three rather than dropping `b` and `c` into positionals.
+The run stops at the first argument that looks like an option (unless the option is also `greedy`, which widens what counts as a value for the whole run), at `--`, or at the end of the list; an attached value (`--plugins=a`) does not start a run.
+A lone `-` is a value, not an option, so it is collected like any other - `--plugins a - b` yields all three.
+Implies `multiple: true`, so repeated occurrences accumulate and the value is an array; an explicit `multiple: false` throws, and a scalar `default` is wrapped in an array for you.
+The one exception is `optionalValue: true`, where an occurrence with no values at all yields the scalar `true` rather than an empty array, exactly as it does without `variadic`.
+Not allowed on a `boolean` option.
  - `options[name].optionalValue`: the option's value is optional, so it may be passed bare.
 `true` makes a bare occurrence yield the boolean `true`, widening the value type to `string | true`; a string makes it yield that string, which is injected as an ordinary value and so leaves the type alone.
 An explicit value is still taken in every spelling - `-p x`, `-px`, `--package=x`, and at the end of a short cluster (`-up x`) - and an option-looking next token is *not* consumed, so `-p --stdout` is a bare `-p` followed by `--stdout`.

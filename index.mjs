@@ -241,8 +241,8 @@ export default async function pargs(entrypointPath, obj) {
 		// tested for truthiness
 		const hasOptionalValue = value.optionalValue === true || typeof value.optionalValue === 'string';
 
-		if (value.type === 'boolean' && (value.greedy || hasOptionalValue)) {
-			throw new TypeError(`Error: \`greedy\` and \`optionalValue\` are not allowed on a boolean option; \`${key}\` is invalid`);
+		if (value.type === 'boolean' && (value.greedy || hasOptionalValue || value.variadic)) {
+			throw new TypeError(`Error: \`greedy\`, \`optionalValue\`, and \`variadic\` are not allowed on a boolean option; \`${key}\` is invalid`);
 		}
 
 		// `greedy` always takes the next token, so an optional value could only ever
@@ -255,18 +255,32 @@ export default async function pargs(entrypointPath, obj) {
 			bares[key] = true;
 		}
 
-		if (value.type === 'enum') {
-			if (!isArray(value.choices) || !value.choices.every((/** @type {unknown} */ x) => typeof x === 'string')) {
+		if (value.variadic && value.multiple === false) {
+			throw new TypeError(`Error: \`variadic\` implies \`multiple\`, so \`multiple: false\` is not allowed; \`${key}\` is invalid`);
+		}
+
+		// a variadic option collects many values per occurrence, so its value is
+		// always an array - which, in `parseArgs` terms, is `multiple: true`
+		const option = value.variadic
+			? {
+				...value,
+				multiple: true,
+				...'default' in value && { default: [].concat(/** @type {never} */ (value.default)) },
+			}
+			: value;
+
+		if (option.type === 'enum') {
+			if (!isArray(option.choices) || !option.choices.every((/** @type {unknown} */ x) => typeof x === 'string')) {
 				throw new TypeError(`Error: enum choices must be an array of strings; \`${key}\` is invalid`);
 			}
 
-			enums[key] = value;
-			return [[key, { ...value, type: 'string' }]];
+			enums[key] = option;
+			return [[key, { ...option, type: 'string' }]];
 		}
 
-		if (value.type === 'number' || value.type === 'integer') {
-			numbers[key] = value.type;
-			const converted = { ...value, type: 'string' };
+		if (option.type === 'number' || option.type === 'integer') {
+			numbers[key] = option.type;
+			const converted = { ...option, type: 'string' };
 			if ('default' in converted) {
 				const def = [].concat(converted.default).map(String);
 				converted.default = converted.multiple ? def : def[0];
@@ -274,7 +288,7 @@ export default async function pargs(entrypointPath, obj) {
 			return [[key, converted]];
 		}
 
-		return [[key, value]];
+		return [[key, option]];
 	}).concat([
 		[
 			'help',

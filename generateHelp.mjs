@@ -20,7 +20,7 @@ function valuePlaceholder(value) {
 	// `optionalValue` of `''` is a real value, so truthiness is the wrong test.
 	const optional = value.optionalValue === true || typeof value.optionalValue === 'string';
 	const [open, close] = optional ? ['[', ']'] : ['<', '>'];
-	return ` ${open}${inner}${close}${value.multiple ? '...' : ''}`;
+	return ` ${open}${inner}${close}${value.multiple || value.variadic ? '...' : ''}`;
 }
 
 /** @type {(value: PargsOptionConfig) => string} */
