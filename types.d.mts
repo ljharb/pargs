@@ -55,6 +55,7 @@ type ArityKeys = {
 	 * `--help` and `--version` included.
 	 */
 	greedy?: boolean;
+	optionalValue?: boolean | string;
 };
 
 /**
@@ -64,6 +65,7 @@ type ArityKeys = {
  */
 type NoArityKeys = {
 	greedy?: never;
+	optionalValue?: never;
 };
 
 export type PargsOptionConfig =
@@ -159,11 +161,18 @@ type BaseValueType<O extends PargsOptionConfig> =
 					? boolean
 					: string | boolean;
 
-// Get the full value type for an option (considering multiple)
-type OptionValueType<O extends PargsOptionConfig> =
+// Get the list-or-scalar value type for an option (considering multiple)
+type ListValueType<O extends PargsOptionConfig> =
 	O extends { multiple: true }
 		? BaseValueType<O>[]
 		: BaseValueType<O>;
+
+// `optionalValue: true` adds `true` for the bare form; a string `optionalValue`
+// is injected as an ordinary value, so it does not widen the type
+type OptionValueType<O extends PargsOptionConfig> =
+	O extends { optionalValue: true }
+		? ListValueType<O> | true
+		: ListValueType<O>;
 
 // Check if an option has a default value
 type HasDefault<O> = O extends { default: any } ? true : false;

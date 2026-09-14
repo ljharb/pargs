@@ -999,6 +999,269 @@ test('pargs - `greedy`', async (t) => {
 	});
 });
 
+test('pargs - `optionalValue`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file');
+
+	const NUL = String.fromCharCode(0);
+
+	// `JSON.stringify` escapes U+0000 as a six-character escape, so checking a
+	// serialized result for a NUL is an assertion that can never fail; walk the
+	// real strings instead
+	/** @type {(value: unknown) => boolean} */
+	function containsNul(value) {
+		if (typeof value === 'string') {
+			return value.includes(NUL);
+		}
+		if (Array.isArray(value)) {
+			return value.some(containsNul);
+		}
+		if (value && typeof value === 'object') {
+			return Object.values(value).some(containsNul);
+		}
+		return false;
+	}
+
+	/** @type {(args: string[], options: Record<string, unknown>) => Promise<any>} */
+	const parse = (args, options) => pargs(entrypoint, /** @type {never} */ ({
+		args,
+		allowPositionals: true,
+		options,
+	}));
+
+	const pkg = {
+		package: { type: 'string', short: 'p', optionalValue: true },
+		unreleased: { type: 'boolean', short: 'u' },
+		stdout: { type: 'boolean' },
+	};
+
+	t.test('a bare occurrence yields `true`', async (st) => {
+		st.equal((await parse(['-p'], pkg)).values.package, true, 'the short form');
+		st.equal((await parse(['--package'], pkg)).values.package, true, 'the long form');
+		st.equal((await parse(['-p'], pkg)).errors.length, 0, 'no errors');
+		// the key must stay absent when unpassed, or a config merge downstream
+		// can not tell "not given" from "given bare"
+		st.equal('package' in (await parse([], pkg)).values, false, 'an unpassed option stays absent');
+	});
+
+	t.test('a value is still taken when given', async (st) => {
+		st.equal((await parse(['-p', 'x.json'], pkg)).values.package, 'x.json', 'a separate short value');
+		st.equal((await parse(['--package=x.json'], pkg)).values.package, 'x.json', 'an inline long value');
+		st.equal((await parse(['-px.json'], pkg)).values.package, 'x.json', 'an attached short value');
+		st.equal((await parse(['--package='], pkg)).values.package, '', 'an empty inline value stays empty');
+	});
+
+	t.test('works in short clusters, and stops at the next option', async (st) => {
+		const cluster = await parse(['-up'], pkg);
+		st.equal(cluster.values.unreleased, true, 'the leading boolean parses');
+		st.equal(cluster.values.package, true, 'the trailing optional-value short is bare');
+
+		st.equal((await parse(['-upx.json'], pkg)).values.package, 'x.json', 'a cluster with an attached value');
+
+		const followed = await parse(['-p', '--stdout'], pkg);
+		st.equal(followed.values.package, true, 'an option-looking next token is not consumed');
+		st.equal(followed.values.stdout, true, 'the next option still parses');
+
+		st.equal((await parse(['-pu'], pkg)).values.package, 'u', 'an attached value wins over a cluster reading');
+	});
+
+	t.test('a string `optionalValue` is injected as a real value', async (st) => {
+		const options = { def: { type: 'string', short: 'd', optionalValue: 'package.json' } };
+		st.equal((await parse(['-d'], options)).values.def, 'package.json', 'the bare form uses the named default');
+		st.equal((await parse(['-d', 'y.json'], options)).values.def, 'y.json', 'an explicit value still wins');
+	});
+
+	t.test('interacts with `multiple`', async (st) => {
+		const options = { inc: { type: 'string', short: 'I', multiple: true, optionalValue: true } };
+		st.equal((await parse(['-I'], options)).values.inc, true, 'an all-bare run collapses to the scalar');
+		st.deepEqual((await parse(['-I', 'a', '-I'], options)).values.inc, ['a'], 'a bare occurrence contributes nothing');
+		st.deepEqual((await parse(['-I', 'a', '-I', 'b'], options)).values.inc, ['a', 'b'], 'real values are all collected');
+
+		const stringForm = { inc: { type: 'string', short: 'I', multiple: true, optionalValue: 'DEF' } };
+		st.deepEqual((await parse(['-I', 'a', '-I'], stringForm)).values.inc, ['a', 'DEF'], 'a string form does contribute');
+	});
+
+	t.test('a declared `default` is not mistaken for a run of bare occurrences', async (st) => {
+		// an unpassed option arrives as its `default`; an empty one must not be
+		// read as "every occurrence was bare" and collapsed to the scalar
+		const empty = { inc: { type: 'string', multiple: true, optionalValue: true, default: /** @type {string[]} */ ([]) } };
+		st.deepEqual((await parse([], empty)).values.inc, [], 'an empty default survives untouched');
+		st.deepEqual((await parse(['--inc', 'a'], empty)).values.inc, ['a'], 'a real value still replaces it');
+		st.equal((await parse(['--inc'], empty)).values.inc, true, 'and a bare occurrence still collapses');
+
+		const filled = { inc: { type: 'string', multiple: true, optionalValue: true, default: ['x'] } };
+		st.deepEqual((await parse([], filled)).values.inc, ['x'], 'a non-empty default survives too');
+	});
+
+	t.test('an empty-string `optionalValue` is a real value', async (st) => {
+		const long = { b: { type: 'string', optionalValue: '' } };
+		const bare = await parse(['--b'], long);
+		st.equal(bare.values.b, '', 'a bare long occurrence yields the empty string');
+		st.deepEqual(bare.errors, [], 'rather than being an argument-missing error');
+
+		// `-b` plus `''` is just `-b` again, so the short form has to be spelled out
+		const short = { b: { type: 'string', short: 'b', optionalValue: '' } };
+		const bareShort = await parse(['-b'], short);
+		st.equal(bareShort.values.b, '', 'a bare short occurrence does too');
+		st.deepEqual(bareShort.errors, [], 'with no error');
+		st.equal((await parse(['-b', 'v'], short)).values.b, 'v', 'an explicit value still wins');
+
+		// the long form the empty value is spelled out as can not carry the rest of a
+		// cluster, so whatever preceded the option has to survive on its own
+		const clustered = {
+			upper: { type: /** @type {'boolean'} */ ('boolean'), short: 'u' },
+			b: { type: /** @type {'string'} */ ('string'), short: 'b', optionalValue: '' },
+		};
+		const cluster = await parse(['-ub'], clustered);
+		st.equal(cluster.values.b, '', 'the trailing option still yields the empty string');
+		st.equal(cluster.values.upper, true, 'and the flag ahead of it is not swallowed');
+		st.deepEqual(cluster.errors, [], 'with no error');
+		st.deepEqual(
+			cluster.values,
+			(await parse(['-u', '-b'], clustered)).values,
+			'the clustered and separated spellings agree',
+		);
+	});
+
+	t.test('an `optionalValue` option is still type-checked on the error path', async (st) => {
+		// the salvage keeps a bare occurrence without measuring it against the
+		// declared type; that exemption must not extend to its real values
+		const result = await pargs(entrypoint, {
+			args: ['--count', 'abc', '--bogus'],
+			partialValues: true,
+			options: { count: { type: 'integer', optionalValue: true } },
+		});
+		st.equal('count' in result.values, false, 'a non-integer value is dropped as usual');
+
+		const bare = await pargs(entrypoint, {
+			args: ['--count', '--bogus'],
+			partialValues: true,
+			options: { count: { type: 'integer', optionalValue: true } },
+		});
+		st.equal(bare.values.count, true, 'while a bare occurrence is still salvaged');
+	});
+
+	t.test('the sentinel can not be smuggled in through `args`', async (st) => {
+		// the NUL guard only runs for configs that opted into an arity, so an
+		// option that did not must still validate a sentinel-looking value
+		const sentinel = `${NUL}pargs:bare${NUL}`;
+
+		const level = await parse([`--level=${sentinel}`], { level: { type: 'enum', choices: ['debug'] } });
+		st.deepEqual(level.errors, ['Error: Invalid value for option "level"'], 'an enum still validates it');
+
+		const n = await parse([`--n=${sentinel}`], { n: { type: 'number' } });
+		st.deepEqual(n.errors, ['Error: Invalid number value for option "n"'], 'a number still validates it');
+	});
+
+	t.test('does not confuse `enum` or `number` validation', async (st) => {
+		const level = { level: { type: 'enum', choices: ['debug'], short: 'l', optionalValue: true } };
+		const bareEnum = await parse(['-l'], level);
+		st.equal(bareEnum.values.level, true, 'a bare enum yields `true`');
+		st.deepEqual(bareEnum.errors, [], 'and is not measured against `choices`');
+		st.equal((await parse(['-l', 'debug'], level)).values.level, 'debug', 'a real value still validates');
+
+		const count = { count: { type: 'integer', short: 'c', optionalValue: true } };
+		const bareInteger = await parse(['-c'], count);
+		st.equal(bareInteger.values.count, true, 'a bare integer yields `true`, not `Number(true)`');
+		st.deepEqual(bareInteger.errors, [], 'and is not measured as a number');
+
+		const defaulted = { count: { type: 'integer', short: 'c', optionalValue: '4' } };
+		st.equal((await parse(['-c'], defaulted)).values.count, 4, 'a string form is coerced like any value');
+	});
+
+	t.test('never leaks the sentinel', async (st) => {
+		const result = await pargs(entrypoint, {
+			// the extra option and positional give `scrubBareTokens` tokens it must
+			// pass through untouched
+			args: ['-p', '--stdout', 'pos'],
+			tokens: true,
+			allowPositionals: true,
+			options: {
+				package: { type: 'string', short: 'p', optionalValue: true },
+				stdout: { type: 'boolean' },
+			},
+		});
+		st.equal(containsNul(result), false, 'nothing in the result contains a NUL byte');
+		st.equal(result.values.stdout, true, 'the untouched option still parses');
+		const token = /** @type {Record<string, unknown>} */ (
+			result.tokens.find((each) => each.kind === 'option' && each.name === 'package')
+		);
+		st.equal('value' in token && typeof token.value === 'undefined', true, 'the token has no value');
+		st.equal('inlineValue' in token && typeof token.inlineValue === 'undefined', true, 'the token has no inlineValue');
+	});
+
+	t.test('survives the error path', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-p', '--bogus'],
+			partialValues: true,
+			tokens: true,
+			options: { package: { type: 'string', short: 'p', optionalValue: true } },
+		});
+		st.equal(result.values.package, true, 'a bare occurrence is salvaged as `true`');
+		st.equal(containsNul(result), false, 'and neither values nor tokens carry a NUL byte');
+	});
+
+	t.test('an argument containing a NUL byte throws', async (st) => {
+		try {
+			await parse([`a${NUL}b`], pkg);
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /NUL byte/, 'the message explains why');
+		}
+	});
+
+	t.test('invalid configurations throw', async (st) => {
+		/** @type {(options: Record<string, unknown>, re: RegExp, msg: string) => Promise<void>} */
+		async function rejects(options, re, msg) {
+			try {
+				await pargs(entrypoint, /** @type {never} */ ({ options }));
+				st.fail(`should have thrown: ${msg}`);
+			} catch (e) {
+				st.match(/** @type {Error} */ (e).message, re, msg);
+			}
+		}
+		await rejects({ p: { type: 'string', optionalValue: 1 } }, /must be a boolean or a string/, 'a number is rejected');
+		await rejects({ p: { type: 'string', optionalValue: null } }, /must be a boolean or a string/, 'null is rejected');
+		await rejects({ p: { type: 'boolean', optionalValue: true } }, /not allowed on a boolean/, 'a boolean option is rejected');
+		// `''` is a value the config asked for, so the check can not be truthiness
+		await rejects({ p: { type: 'boolean', optionalValue: '' } }, /not allowed on a boolean/, 'including an empty-string one');
+		await rejects(
+			{ p: { type: 'string', greedy: true, optionalValue: true } },
+			/can not be combined/,
+			'`greedy` would always take the next token, so the two contradict each other',
+		);
+		// and statically, where `rejects` casting the type away can not show it
+		/** @type {import('../types.d.mts').PargsOptionConfig} */
+		// @ts-expect-error `optionalValue` is not allowed on a boolean option
+		const invalid = { type: 'boolean', optionalValue: true };
+		st.ok(invalid, 'the same config is also a type error');
+		// a non-object option config must still produce `parseArgs`' own diagnostic
+		await rejects({ p: 'string' }, /must be of type object/, 'a non-object option config is left to parseArgs');
+	});
+
+	t.test('`optionalValue: false` behaves as absent', async (st) => {
+		const options = { p: { type: 'string', short: 'p', optionalValue: false } };
+		const result = await parse(['-p'], options);
+		st.match(result.errors[0], /argument missing/, 'the option still requires a value');
+	});
+
+	t.test('`generateHelp` renders square brackets', (st) => {
+		const help = generateHelp('cli', {
+			options: {
+				package: { type: 'string', optionalValue: true, placeholder: 'file' },
+				tag: { type: 'string', multiple: true },
+			},
+		});
+		st.match(help, /--package \[file\]/, 'an optional value is shown in square brackets');
+		st.match(help, /--tag <string>\.\.\./, 'an ordinary `multiple` option is unchanged');
+		st.end();
+	});
+});
+
 test('normalizeArgs', (t) => {
 	const options = {
 		log: { type: 'string', greedy: true },

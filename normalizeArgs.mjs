@@ -9,9 +9,37 @@ const {
 // collects a run of values - has to be rewritten into a form parseArgs already
 // understands, before it ever sees the argument list.
 
+// An argv element can never contain a NUL byte - `execve` terminates each
+// argument on one - so this can not collide with anything a user typed. It can
+// only arrive through a programmatic `args`, which is rejected below.
+export const bareValue = '\0pargs:bare\0';
+
+// an `optionalValue` of `''` is a real value the config asked for, so it can not
+// be tested for truthiness
+/** @type {(config: any) => boolean} */
+function hasOptionalValue(config) {
+	return config.optionalValue === true || typeof config.optionalValue === 'string';
+}
+
 /** @type {(config: any) => boolean} */
 function hasArity(config) {
-	return !!config.greedy;
+	return !!config.greedy || hasOptionalValue(config);
+}
+
+// A bare occurrence of an `optionalValue: true` option carries the sentinel
+// through `parseArgs`; put the tokens back the way parseArgs reports a
+// valueless option, so it never reaches a consumer.
+/** @type {(tokens: readonly any[]) => any[]} */
+export function scrubBareTokens(tokens) {
+	return tokens.map((token) => (
+		token.kind === 'option' && token.value === bareValue
+			? {
+				...token,
+				value: undefined,
+				inlineValue: undefined,
+			}
+			: token
+	));
 }
 
 /** @type {(options: Record<string, any>) => boolean} */
@@ -50,6 +78,7 @@ function pushOption(state) {
 		out,
 		args,
 		i,
+		name,
 		config,
 	} = state;
 	const arg = args[i];
@@ -64,12 +93,34 @@ function pushOption(state) {
 		out[out.length] = `${arg}${glue}${next}`;
 		return i + 2;
 	}
+	if (hasOptionalValue(config)) {
+		// `parseArgs` has no optional-value arity, so a bare occurrence is given
+		// one: either the string the config named, or the sentinel standing in for
+		// "passed with no value"
+		const injected = config.optionalValue === true ? bareValue : config.optionalValue;
+		if (injected === '') {
+			// an empty value can not be attached to a short - `-p` plus `''` is just
+			// `-p` again - so spell that one out in long form. Anything earlier in the
+			// cluster has to be re-emitted, since `--name=` can not carry it.
+			if (arg[1] !== '-' && arg.length > 2) {
+				out[out.length] = arg.slice(0, -1);
+			}
+			out[out.length] = `--${name}=`;
+		} else {
+			out[out.length] = `${arg}${glue}${injected}`;
+		}
+		return i + 1;
+	}
 	out[out.length] = arg;
 	return i + 1;
 }
 
 /** @type {(args: string[], options: Record<string, any>) => string[]} */
 export default function normalizeArgs(args, options) {
+	if (args.some((arg) => arg.includes('\0'))) {
+		throw new TypeError('Error: arguments may not contain a NUL byte');
+	}
+
 	/** @type {Record<string, string>} */
 	const shorts = {};
 	entries(options).forEach(([name, config]) => {

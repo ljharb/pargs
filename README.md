@@ -92,6 +92,14 @@ In TypeScript, `options` is a union discriminated on `type`, so a table hoisted 
    - `'enum'`: when provided, a `choices` string array is also required. The value is validated only when one is present - an option that was not passed and has no `default` is not an error. With `multiple`, each element is validated individually.
    - `'number'`: validates the value is a finite number and coerces it from a string.
    - `'integer'`: validates the value is a finite integer and coerces it from a string.
+ - `options[name].optionalValue`: the option's value is optional, so it may be passed bare.
+`true` makes a bare occurrence yield the boolean `true`, widening the value type to `string | true`; a string makes it yield that string, which is injected as an ordinary value and so leaves the type alone.
+An explicit value is still taken in every spelling - `-p x`, `-px`, `--package=x`, and at the end of a short cluster (`-up x`) - and an option-looking next token is *not* consumed, so `-p --stdout` is a bare `-p` followed by `--stdout`.
+With `multiple`, a bare occurrence under `true` contributes nothing to the list, unless every occurrence was bare, in which case the value is the scalar `true`; under the string form it contributes that string like any other value.
+Under `true`, a bare occurrence is exempt from `enum` choices and from `number`/`integer` coercion, since `true` is not one of those; under the string form the injected value is validated like any other, so an `optionalValue` outside an option's `choices` is an error naming that option.
+An `optionalValue` of `''` is a value like any other, not "no optional value".
+A declared `default` is left alone - an unpassed option keeps its default rather than collapsing to `true`.
+Not allowed on a `boolean` option, which already has this shape.
  - `options[name].greedy`: **deprecated**, and marked `@deprecated` in the types - it exists so a CLI moving onto pargs can keep accepting `--opt --value`, which `util.parseArgs` rejects as ambiguous while naming the unambiguous spelling in the error (`--opt=--value`); that is what new code should use.
 The option takes the next argument as its value even when that argument looks like an option, so `--append-git-log --first-parent` works without the `=` form.
 `--` is never consumed - `--x --` keeps its *argument is ambiguous* error, and `--x=--` is the way to pass a literal `--`.
@@ -100,6 +108,10 @@ Not allowed on a `boolean` option.
 When any option in a config asks for an arity `util.parseArgs` can not express, the argument list is rewritten before parsing, so `tokens` describes the rewritten list:
 a fused value is reported as one token with `inlineValue: true`.
 Configs that do not opt in get back the identical array, and therefore identical `tokens`.
+A bare `optionalValue` occurrence is reported the way `parseArgs` reports any valueless option, with `value` and `inlineValue` undefined.
+One constraint comes with the rewriting: at a level whose own options opt in, no argument may contain a NUL byte, and one that does throws.
+The check is per parsed level, not per config, so a subcommand that opts into nothing does not impose it on its own arguments.
+`process.argv` can never contain a NUL byte, so this only ever concerns a programmatic `args`.
  - `partialValues`: when `true`, a fatal parse error (an unknown option, a missing option argument) returns whatever else parsed cleanly instead of an empty `values`. Only declared options survive, and only when the loosely-parsed value still matches the declared type; `enum` choices and `number`/`integer` coercion are applied as usual, and anything that fails is dropped. `errors` still holds only the single fatal error, `positionals` come from the loose reparse and so do not re-apply the configured positional policy, and an option with a `default` may be missing - so `values` is a partial of its usual type. Defaults to `false`, and does not inherit into subcommands.
  - `allowPositionals`: in addition to a boolean, or an integer representing the maximum number of allowed positional arguments.
  - `minPositionals`: an integer representing the minimum required number of positional arguments.

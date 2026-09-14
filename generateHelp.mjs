@@ -15,7 +15,12 @@ function valuePlaceholder(value) {
 		return '';
 	}
 	const inner = value.placeholder || (value.type === 'enum' ? value.choices.join('|') : value.type);
-	return ` <${inner}>${value.multiple ? '...' : ''}`;
+	// an optional value is conventionally shown in square brackets; the `...` for
+	// `multiple` stays outside them, so existing output is unchanged. An
+	// `optionalValue` of `''` is a real value, so truthiness is the wrong test.
+	const optional = value.optionalValue === true || typeof value.optionalValue === 'string';
+	const [open, close] = optional ? ['[', ']'] : ['<', '>'];
+	return ` ${open}${inner}${close}${value.multiple ? '...' : ''}`;
 }
 
 /** @type {(value: PargsOptionConfig) => string} */

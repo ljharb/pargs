@@ -5,7 +5,7 @@ import isParseArgsError from './isParseArgsError.mjs';
 import maybeStripColors from './maybeStripColors.mjs';
 import getHelpText, { getVersion } from './getHelpText.mjs';
 import resolveShorts, { kInheritedShorts } from './resolveShorts.mjs';
-import normalizeArgs, { needsNormalizing } from './normalizeArgs.mjs';
+import normalizeArgs, { bareValue, needsNormalizing, scrubBareTokens } from './normalizeArgs.mjs';
 
 const {
 	hasOwn,
@@ -37,18 +37,43 @@ const kMutateArgv = Symbol('pargs: may splice process.argv');
 // itself, so a clash with its own `version` option was not declared in one place
 const kInheritedVersion = Symbol('pargs: `version` was inherited');
 
+// Swap the internal sentinel back out for what the config asked a bare
+// occurrence to mean, so it is never observable from outside.
+/** @type {(bare: unknown, value: unknown) => unknown} */
+function replaceBareValue(bare, value) {
+	if (isArray(value)) {
+		// a bare occurrence contributes nothing to a `multiple` option, unless
+		// every occurrence was bare - then there is no list to speak of. An
+		// already-empty list is a declared `default`, not a run of bare
+		// occurrences, so it is left exactly as the config asked for.
+		const real = value.filter((v) => v !== bareValue);
+		return value.length > 0 && real.length === 0 ? bare : real;
+	}
+	return value === bareValue ? bare : value;
+}
+
 // Salvage what can be salvaged from a loose (`strict: false`) reparse after a
 // fatal parse error: keep only declared options whose parsed value still
 // matches the declared type, applying the same coercion the strict path does.
-/** @type {(schema: { normalized: Record<string, any>, options: Record<string, any> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
+/** @type {(schema: { normalized: Record<string, any>, options: Record<string, any>, bares: Record<string, unknown> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
 function partialValues(schema, looseValues) {
-	const { normalized, options } = schema;
+	const {
+		normalized,
+		options,
+		bares,
+	} = schema;
 	return fromEntries(entries(looseValues).flatMap(([key, value]) => {
 		if (!hasOwn(normalized, key)) {
 			return [];
 		}
 		/** @type {unknown[]} */
 		const list = /** @type {unknown[]} */ ([]).concat(value);
+
+		// a bare occurrence already stands in for its declared type, so it is kept without being measured against it
+		if (hasOwn(bares, key) && list.every((v) => v === bares[key])) {
+			return [[key, value]];
+		}
+
 		const { multiple } = normalized[key];
 		// `normalizedOptions` has already rewritten `enum`/`number`/`integer` to
 		// `'string'`, so the declared type comes off the original config - except
@@ -192,14 +217,42 @@ export default async function pargs(entrypointPath, obj) {
 	// @ts-expect-error __proto__
 	const numbers = { __proto__: null };
 
+	/** @type {Record<string, true | string>} */
+	const bares = /** @type {never} */ ({ __proto__: null });
+
+	/** @type {[string, any][]} */
+	const optsEntries = entries(passedConfig.options ?? {});
+
 	/** @type {NonNullable<ParseArgsConfig['options']> & { help: { default: false, type: 'boolean' } }} */
-	const normalizedOptions = fromEntries(entries(passedConfig.options ?? {}).flatMap(([key, value]) => {
+	const normalizedOptions = fromEntries(optsEntries.flatMap(([key, value]) => {
 		if (typeof value.negation !== 'undefined' && value.negation !== 'exclusive' && value.negation !== 'last-wins') {
 			throw new TypeError(`Error: \`negation\` must be either "exclusive" or "last-wins"; \`${key}\` is invalid`);
 		}
 
-		if (value.type === 'boolean' && value.greedy) {
-			throw new TypeError(`Error: \`greedy\` is not allowed on a boolean option; \`${key}\` is invalid`);
+		if (
+			typeof value.optionalValue !== 'undefined'
+			&& typeof value.optionalValue !== 'boolean'
+			&& typeof value.optionalValue !== 'string'
+		) {
+			throw new TypeError(`Error: \`optionalValue\` must be a boolean or a string; \`${key}\` is invalid`);
+		}
+
+		// an `optionalValue` of `''` is a value the config asked for, so it can not be
+		// tested for truthiness
+		const hasOptionalValue = value.optionalValue === true || typeof value.optionalValue === 'string';
+
+		if (value.type === 'boolean' && (value.greedy || hasOptionalValue)) {
+			throw new TypeError(`Error: \`greedy\` and \`optionalValue\` are not allowed on a boolean option; \`${key}\` is invalid`);
+		}
+
+		// `greedy` always takes the next token, so an optional value could only ever
+		// apply at the end of the argument list - the two contradict each other
+		if (value.greedy && hasOptionalValue) {
+			throw new TypeError(`Error: \`greedy\` and \`optionalValue\` can not be combined, since \`greedy\` always takes the next token; \`${key}\` is invalid`);
+		}
+
+		if (value.optionalValue === true) {
+			bares[key] = true;
 		}
 
 		if (value.type === 'enum') {
@@ -269,12 +322,20 @@ export default async function pargs(entrypointPath, obj) {
 			if (typeof value === 'undefined') {
 				return;
 			}
+
+			// the sentinel is only exempt for an option that actually opted in; a
+			// caller-supplied `args` could otherwise smuggle it past validation
+			const bare = hasOwn(bares, key);
+
 			// a value that is not a declared choice is simply not a member, so widening
 			// what `includes` accepts answers that directly - where a `typeof` guard
 			// would add an arm nothing ever reaches
 			/** @type {{ choices: readonly (string | boolean)[] }} */
 			const { choices } = config;
-			if (!(/** @type {(string | boolean)[]} */ ([]).concat(value).every((v) => choices.includes(v)))) {
+
+			const ok = (/** @type {(string | boolean)[]} */ ([])).concat(value)
+				.every((v) => (bare && v === bareValue) || choices.includes(v));
+			if (!ok) {
 				errors[errors.length] = `Error: Invalid value for option "${key}"`;
 			}
 		});
@@ -287,7 +348,14 @@ export default async function pargs(entrypointPath, obj) {
 				return;
 			}
 			let allValid = true;
+			const bare = hasOwn(bares, key);
 			const nums = /** @type {unknown[]} */ ([]).concat(value).map((v) => {
+				// a bare occurrence is not a number yet; it is swapped out below.
+				// only exempt when this option opted in, so a caller-supplied `args`
+				// can not smuggle the sentinel past validation.
+				if (bare && v === bareValue) {
+					return v;
+				}
 				const num = Number(v);
 				if (!Number.isFinite(num) || (type === 'integer' && !Number.isInteger(num))) {
 					allValid = false;
@@ -298,6 +366,14 @@ export default async function pargs(entrypointPath, obj) {
 				errors[errors.length] = `Error: Invalid ${type} value for option "${key}"`;
 			}
 			coerced[key] = isArray(value) ? nums : nums[0];
+		});
+
+		entries(bares).forEach(([key, bare]) => {
+			// only ever rewrite a key the user actually passed; creating one here
+			// would make an unpassed option indistinguishable from a passed one
+			if (hasOwn(results.values, key)) {
+				results.values[key] = /** @type {never} */ (replaceBareValue(bare, results.values[key]));
+			}
 		});
 
 		const { allowPositionals, minPositionals } = passedConfig;
@@ -449,7 +525,7 @@ export default async function pargs(entrypointPath, obj) {
 					...command,
 				},
 			},
-			...obj.tokens && { tokens },
+			...obj.tokens && { tokens: normalizing ? scrubBareTokens(tokens) : tokens },
 		};
 	} catch (e) {
 		const fakeErrors = [`Error: ${!!e && typeof e === 'object' && 'message' in e && e.message}`];
@@ -463,6 +539,13 @@ export default async function pargs(entrypointPath, obj) {
 				strict: false,
 				allowPositionals: true,
 			});
+			if (partial) {
+				entries(bares).forEach(([key, bare]) => {
+					if (hasOwn(looseValues, key)) {
+						looseValues[key] = /** @type {never} */ (replaceBareValue(bare, looseValues[key]));
+					}
+				});
+			}
 			// the loose reparse still tells us whether `--help` was asked for, which
 			// the success path honors and this one must too: whether a mistake
 			// happens to be fatal to `parseArgs` is not the user's concern.
@@ -493,13 +576,14 @@ export default async function pargs(entrypointPath, obj) {
 						{
 							normalized: normalizedOptions,
 							options: passedConfig.options ?? {},
+							bares,
 						},
 						looseValues,
 					)
 					: {},
 				positionals: partial ? loosePositionals : [],
 				errors: fakeErrors,
-				...obj.tokens && { tokens },
+				...obj.tokens && { tokens: normalizing ? scrubBareTokens(tokens) : tokens },
 			};
 		}
 		throw e;
