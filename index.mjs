@@ -386,13 +386,20 @@ export default async function pargs(entrypointPath, obj) {
 		const helpBuiltinVersion = !hasUserVersion
 			&& !(helpConfig.options && 'version' in helpConfig.options)
 			&& helpVersionConfig !== false;
-		async function help() {
+		/** @type {(options?: { exit?: boolean }) => Promise<'version' | 'help' | 'errors' | false>} */
+		async function help(options) {
+			// `options || {}`, not a defaulted parameter, so that passing the `null`
+			// a `promise.then(help)` would hand it is not a crash
+			const { exit = true } = options || {};
 			if (helpBuiltinVersion && helpValues.version) {
 				const version = typeof helpVersionConfig === 'string'
 					? helpVersionConfig
 					: await getVersion(realEntrypointPath).then((v) => (v ? `v${v}` : v));
 				console.log(version);
-				process.exit();
+				if (exit) {
+					process.exit();
+				}
+				return 'version';
 			}
 			const wantsHelp = 'help' in helpValues && !!helpValues.help;
 			if (wantsHelp || helpErrors.length > 0) {
@@ -409,8 +416,12 @@ export default async function pargs(entrypointPath, obj) {
 					helpErrors.forEach((error) => console.error(error));
 				}
 
-				process.exit();
+				if (exit) {
+					process.exit();
+				}
+				return helpErrors.length === 0 ? 'help' : 'errors';
 			}
+			return false;
 		}
 
 		// @ts-expect-error TODO: figure out how to make this work
@@ -446,9 +457,11 @@ export default async function pargs(entrypointPath, obj) {
 			// help anyone fix a malformed command line, and printing it would mask the
 			// error it was typed alongside
 			const wantsHelp = !!looseValues.help;
+
 			// @ts-expect-error TODO: figure out how to make this work
 			return {
-				async help() {
+				async help(options) {
+					const { exit = true } = options || {};
 					if (wantsHelp || usageOnError !== false) {
 						const helpText = maybeStripColors(await getHelpText(realEntrypointPath, obj));
 						console[wantsHelp || usageOnError !== 'stderr' ? 'log' : 'error'](`${helpText}\n`);
@@ -457,7 +470,10 @@ export default async function pargs(entrypointPath, obj) {
 					process.exitCode ||= parseInt('1', 2);
 					console.error(fakeErrors[0]);
 
-					process.exit();
+					if (exit) {
+						process.exit();
+					}
+					return 'errors';
 				},
 				values: partial
 					? partialValues(

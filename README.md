@@ -51,6 +51,10 @@ Option defaults are shown as `(default: …)`, except that a boolean option’s 
 
 `await` an invocation of the `help` function returned from the pargs call to handle `--help` and print the help text if needed, or to print errors and exit.
 
+It returns which path it handled - `'version'`, `'help'`, `'errors'`, or `false` when there was nothing to handle.
+Passing `{ exit: false }` makes it return instead of calling `process.exit()`, which is what a function that parses args but is not itself the process entrypoint needs, since `process.exit` can not be caught.
+`process.exitCode` is still set, so `if (await help({ exit: false })) { return; }` is a working drop-in.
+
 ### Version
 
 `--version` is provided automatically: the same `await help()` call handles it, printing the `version` field from the nearest `package.json`, prefixed with `v`, and exiting.

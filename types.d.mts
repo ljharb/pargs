@@ -93,6 +93,14 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 
 export type PargsRootConfig = PargsConfig;
 
+export type HelpOptions = {
+	/** when `false`, `help()` returns instead of calling `process.exit()`; `process.exitCode` is still set */
+	exit?: boolean;
+};
+
+/** which path `help()` handled, or `false` if there was nothing to handle */
+export type HelpResult = 'version' | 'help' | 'errors' | false;
+
 export type ParseArgsError = NodeJS.ErrnoException & {
 	code:
 		| 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
@@ -175,7 +183,7 @@ export type PargsParsed<T extends (PargsConfig | PargsRootConfig)> = (
 		: {}
 ) & {
 	errors: string[],
-	help(): Promise<void>,
+	help(options?: HelpOptions): Promise<HelpResult>,
 	// under `partialValues`, the error path returns only what survived the loose
 	// reparse, which can omit even an option that declared a `default`
 	values: T extends { partialValues: true }

@@ -133,7 +133,7 @@ test('pargs - `version` config', async (t) => {
 		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '4.5.6' })),
 	]);
 
-	/** @type {(st: import('tape').Test, result: { help: () => Promise<void> }) => Promise<string[]>} */
+	/** @type {(st: import('tape').Test, result: { help: () => Promise<unknown> }) => Promise<string[]>} */
 	async function printed(st, result) {
 		const logCapture = st.capture(console, 'log');
 		st.capture(process, 'exit', () => {
@@ -603,7 +603,7 @@ test('pargs - `usageOnError`', async (t) => {
 	// summary, so that is put back too.
 	/** @type {(config: Record<string, unknown>) => Promise<{ out: string[], err: string[] }>} */
 	async function streams(config) {
-		const result = /** @type {{ help: () => Promise<void> }} */ (
+		const result = /** @type {{ help: () => Promise<unknown> }} */ (
 			/** @type {unknown} */ (await pargs(entrypoint, /** @type {never} */ (config)))
 		);
 		/** @type {string[]} */
@@ -760,6 +760,126 @@ test('pargs - `usageOnError`', async (t) => {
 			st.ok(e instanceof TypeError, 'throws a TypeError');
 			st.match(/** @type {Error} */ (e).message, /`usageOnError`/, 'the message mentions `usageOnError`');
 		}
+	});
+});
+
+test('pargs - `help({ exit })`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '4.5.6' })),
+	]);
+
+	/** @type {(config: Record<string, unknown>, helpOptions?: unknown) => Promise<{ handled: unknown, exits: number }>} */
+	async function run(config, helpOptions) {
+		const result = /** @type {{ help: (o?: unknown) => Promise<unknown> }} */ (
+			/** @type {unknown} */ (await pargs(entrypoint, /** @type {never} */ (config)))
+		);
+		let exits = 0;
+		const realLog = console.log;
+		const realError = console.error;
+		const realExit = process.exit;
+		const realExitCode = process.exitCode;
+		console.log = () => {};
+		console.error = () => {};
+		process.exit = /** @type {never} */ (() => {
+			exits += 1;
+			throw new Error('EXIT');
+		});
+		let handled;
+		try {
+			handled = await result.help(helpOptions);
+		} catch { /**/ } finally {
+			console.log = realLog;
+			console.error = realError;
+			process.exit = realExit;
+			process.exitCode = realExitCode;
+		}
+		return { handled, exits };
+	}
+
+	const noExit = { exit: false };
+
+	t.test('reports which path it handled', async (st) => {
+		st.deepEqual(
+			await run({ args: ['--help'] }, noExit),
+			{ handled: 'help', exits: 0 },
+			'`--help` reports `help`',
+		);
+		st.deepEqual(
+			await run({ args: ['-h'], shorts: true }, noExit),
+			{ handled: 'help', exits: 0 },
+			'`-h` reports `help`',
+		);
+		st.deepEqual(
+			await run({ args: ['-V'], shorts: true }, noExit),
+			{ handled: 'version', exits: 0 },
+			'`-V` reports `version`',
+		);
+		st.deepEqual(
+			await run({ args: [] }, noExit),
+			{ handled: false, exits: 0 },
+			'nothing to handle reports `false`',
+		);
+	});
+
+	t.test('reports errors from both paths', async (st) => {
+		st.deepEqual(
+			await run({ args: ['--level', 'nope'], options: { level: { type: 'enum', choices: ['debug'] } } }, noExit),
+			{ handled: 'errors', exits: 0 },
+			'a validation error reports `errors`',
+		);
+		st.deepEqual(
+			await run({ args: ['--bogus'] }, noExit),
+			{ handled: 'errors', exits: 0 },
+			'an unknown option reports `errors` from the throwing path',
+		);
+		st.deepEqual(
+			await run({ args: ['--verbose=x'], options: { verbose: { type: 'boolean' } } }, noExit),
+			{ handled: 'errors', exits: 0 },
+			'an invalid option value reports `errors` from the throwing path',
+		);
+	});
+
+	t.test('`exit: false` still sets `process.exitCode`', async (st) => {
+		const result = await pargs(entrypoint, { args: ['--bogus'] });
+		const realExit = process.exit;
+		const realLog = console.log;
+		const realError = console.error;
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		console.log = () => {};
+		console.error = () => {};
+		process.exit = /** @type {never} */ (() => {
+			throw new Error('should not exit');
+		});
+		let captured;
+		try {
+			await result.help({ exit: false });
+			captured = process.exitCode;
+		} finally {
+			console.log = realLog;
+			console.error = realError;
+			process.exit = realExit;
+			process.exitCode = realExitCode;
+		}
+		st.ok(Number(captured) > 0, '`process.exitCode` is still set');
+	});
+
+	t.test('still exits by default', async (st) => {
+		st.deepEqual(await run({ args: ['--help'] }), { handled: undefined, exits: 1 }, 'no argument still exits');
+		st.deepEqual(await run({ args: ['--bogus'] }), { handled: undefined, exits: 1 }, 'the throwing path still exits');
+	});
+
+	t.test('a nullish argument is not a crash', async (st) => {
+		st.deepEqual(
+			await run({ args: ['--help'] }, null),
+			{ handled: undefined, exits: 1 },
+			'`help(null)` behaves like `help()`',
+		);
 	});
 });
 
