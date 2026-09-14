@@ -165,12 +165,21 @@ export default async function pargs(entrypointPath, obj) {
 
 	const shorts = resolveShorts(obj);
 
-	// the `version` and reserved-option policies are inherited by subcommands: a
-	// CLI that says it has no built-in `--version`, or that prints its own string,
-	// must mean that at every level. A subcommand may declare its own to override.
+	// an explicitly `undefined` `usageOnError` is "absent", so that spreading an
+	// optional field is not a startup error
+	const usageOnError = typeof obj.usageOnError === 'undefined' ? 'stdout' : obj.usageOnError;
+	if (usageOnError !== false && usageOnError !== 'stdout' && usageOnError !== 'stderr') {
+		throw new TypeError("Error: `usageOnError` must be `false`, `'stdout'`, or `'stderr'`");
+	}
+
+	// the `version`, output, and reserved-option policies are inherited by
+	// subcommands: a CLI that says it has no built-in `--version`, or that prints
+	// its own string, or that keeps usage off stdout, must mean that at every
+	// level. A subcommand may declare its own to override them.
 	const inherited = {
 		...typeof obj.version !== 'undefined' && { version: obj.version },
 		...hasOwn(obj, 'shorts') && { shorts: obj.shorts },
+		...typeof obj.usageOnError !== 'undefined' && { usageOnError },
 	};
 
 	const partial = !!passedConfig.partialValues;
@@ -385,13 +394,17 @@ export default async function pargs(entrypointPath, obj) {
 				console.log(version);
 				process.exit();
 			}
-			if (('help' in helpValues && helpValues.help) || helpErrors.length > 0) {
-				const helpText = maybeStripColors(`${(await getHelpText(realEntrypointPath, obj)).trim()}\n`);
-				if (helpErrors.length === 0) {
-					console.log(helpText);
-				} else {
-					console.log(`${helpText}\n`);
-
+			const wantsHelp = 'help' in helpValues && !!helpValues.help;
+			if (wantsHelp || helpErrors.length > 0) {
+				// help the user explicitly asked for is program output, so it always
+				// prints, and always to stdout; `usageOnError` only governs usage
+				// dumped alongside an error they did not ask for
+				if (wantsHelp || usageOnError !== false) {
+					const helpText = maybeStripColors(`${(await getHelpText(realEntrypointPath, obj)).trim()}\n`);
+					const stream = wantsHelp || usageOnError !== 'stderr' ? 'log' : 'error';
+					console[stream](helpErrors.length === 0 ? helpText : `${helpText}\n`);
+				}
+				if (helpErrors.length > 0) {
 					process.exitCode ||= parseInt('1'.repeat(helpErrors.length), 2);
 					helpErrors.forEach((error) => console.error(error));
 				}
@@ -426,11 +439,20 @@ export default async function pargs(entrypointPath, obj) {
 				strict: false,
 				allowPositionals: true,
 			});
+			// the loose reparse still tells us whether `--help` was asked for, which
+			// the success path honors and this one must too: whether a mistake
+			// happens to be fatal to `parseArgs` is not the user's concern.
+			// `--version` is deliberately not honored here - a version string does not
+			// help anyone fix a malformed command line, and printing it would mask the
+			// error it was typed alongside
+			const wantsHelp = !!looseValues.help;
 			// @ts-expect-error TODO: figure out how to make this work
 			return {
 				async help() {
-					const helpText = maybeStripColors(await getHelpText(realEntrypointPath, obj));
-					console.log(`${helpText}\n`);
+					if (wantsHelp || usageOnError !== false) {
+						const helpText = maybeStripColors(await getHelpText(realEntrypointPath, obj));
+						console[wantsHelp || usageOnError !== 'stderr' ? 'log' : 'error'](`${helpText}\n`);
+					}
 
 					process.exitCode ||= parseInt('1', 2);
 					console.error(fakeErrors[0]);

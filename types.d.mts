@@ -88,6 +88,7 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 	 * are always available.
 	 */
 	shorts?: ShortsConfig;
+	usageOnError?: false | 'stdout' | 'stderr';
 };
 
 export type PargsRootConfig = PargsConfig;

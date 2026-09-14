@@ -590,6 +590,179 @@ test('pargs - `shorts`', async (t) => {
 	});
 });
 
+test('pargs - `usageOnError`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file');
+
+	// `t.capture` only restores at test end, which swallows the TAP output of any
+	// assertion made while it is active; restore by hand instead. `help()` also
+	// sets `process.exitCode` on the error path, which suppresses tape's own
+	// summary, so that is put back too.
+	/** @type {(config: Record<string, unknown>) => Promise<{ out: string[], err: string[] }>} */
+	async function streams(config) {
+		const result = /** @type {{ help: () => Promise<void> }} */ (
+			/** @type {unknown} */ (await pargs(entrypoint, /** @type {never} */ (config)))
+		);
+		/** @type {string[]} */
+		const out = [];
+		/** @type {string[]} */
+		const err = [];
+		const realLog = console.log;
+		const realError = console.error;
+		const realExit = process.exit;
+		const realExitCode = process.exitCode;
+		console.log = (...args) => { out.push(args.join(' ')); };
+		console.error = (...args) => { err.push(args.join(' ')); };
+		process.exit = /** @type {never} */ (() => {
+			throw new Error('EXIT');
+		});
+		try {
+			await result.help();
+		} catch { /**/ } finally {
+			console.log = realLog;
+			console.error = realError;
+			process.exit = realExit;
+			process.exitCode = realExitCode;
+		}
+		return { out, err };
+	}
+
+	const enumOption = { level: { type: 'enum', choices: ['debug', 'info'] } };
+
+	t.test('`--version` alongside a fatal error reports the error, not the version', async (st) => {
+		// `--help` is honored on this path because usage is what someone with a
+		// malformed command line needs; a version string is not, and printing it
+		// would mask the error it was typed alongside
+		const { out, err } = await streams({
+			args: ['--version', '--bogus'],
+			version: 'mytool 9.9.9',
+		});
+		st.notOk(out.some((line) => line.includes('mytool 9.9.9')), 'the version is not printed');
+		st.ok(err.some((line) => line.includes('bogus')), 'the error is reported instead');
+	});
+
+	t.test('defaults to stdout', async (st) => {
+		const { out, err } = await streams({ args: ['--level', 'nope'], options: enumOption });
+		st.ok(out.some((line) => line.includes('Usage')), 'usage goes to stdout');
+		st.ok(err.some((line) => line.includes('Invalid value')), 'the error goes to stderr');
+	});
+
+	t.test("`'stderr'` moves the usage off stdout", async (st) => {
+		const { out, err } = await streams({
+			args: ['--level', 'nope'],
+			usageOnError: 'stderr',
+			options: enumOption,
+		});
+		st.deepEqual(out, [], 'nothing goes to stdout');
+		st.ok(err.some((line) => line.includes('Usage')), 'usage goes to stderr');
+		st.ok(err.some((line) => line.includes('Invalid value')), 'the error goes to stderr too');
+	});
+
+	t.test('`false` prints no usage at all', async (st) => {
+		const { out, err } = await streams({
+			args: ['--level', 'nope'],
+			usageOnError: false,
+			options: enumOption,
+		});
+		st.deepEqual(out, [], 'nothing goes to stdout');
+		st.notOk(err.some((line) => line.includes('Usage')), 'no usage anywhere');
+		st.ok(err.some((line) => line.includes('Invalid value')), 'the error still goes to stderr');
+	});
+
+	t.test('an explicitly requested `--help` prints even under `false`', async (st) => {
+		const { out, err } = await streams({
+			args: ['--help', '--level', 'nope'],
+			usageOnError: false,
+			options: enumOption,
+		});
+		st.ok(out.some((line) => line.includes('Usage')), 'help prints even under `false`');
+		st.ok(err.some((line) => line.includes('Invalid value')), 'the error still goes to stderr');
+	});
+
+	t.test("an explicitly requested `--help` stays on stdout under `'stderr'`", async (st) => {
+		const { out } = await streams({
+			args: ['--help', '--level', 'nope'],
+			usageOnError: 'stderr',
+			options: enumOption,
+		});
+		st.ok(out.some((line) => line.includes('Usage')), 'help stays on stdout');
+	});
+
+	t.test("the throwing parse path honors `'stderr'`", async (st) => {
+		const { out, err } = await streams({
+			args: ['--verbose=x'],
+			usageOnError: 'stderr',
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.deepEqual(out, [], 'nothing goes to stdout');
+		st.ok(err.some((line) => line.includes('Usage')), 'usage goes to stderr');
+	});
+
+	t.test('the throwing parse path honors `false`', async (st) => {
+		const { out, err } = await streams({
+			args: ['--verbose=x'],
+			usageOnError: false,
+			options: { verbose: { type: 'boolean' } },
+		});
+		// asserting on stdout too: leaking usage there is the exact thing `false`
+		// exists to prevent, so checking only stderr cannot catch the regression
+		st.deepEqual(out, [], 'nothing goes to stdout');
+		st.notOk(err.some((line) => line.includes('Usage')), 'no usage under `false`');
+		st.ok(err.length > 0, 'the error is still reported');
+	});
+
+	t.test('an explicitly requested `--help` survives a fatal parse error', async (st) => {
+		// whether the accompanying mistake is fatal to `parseArgs` is not the
+		// user's concern: they asked for help, so help prints, and to stdout
+		const off = await streams({
+			args: ['--help', '--verbose=x'],
+			usageOnError: false,
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.ok(off.out.some((line) => line.includes('Usage')), 'help prints under `false`');
+
+		const toStderr = await streams({
+			args: ['--help', '--verbose=x'],
+			usageOnError: 'stderr',
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.ok(toStderr.out.some((line) => line.includes('Usage')), "and stays on stdout under `'stderr'`");
+		st.notOk(toStderr.err.some((line) => line.includes('Usage')), 'rather than being duplicated to stderr');
+	});
+
+	t.test('subcommands inherit `usageOnError`', async (st) => {
+		const { out, err } = await streams({
+			args: ['run', '--level', 'nope'],
+			usageOnError: 'stderr',
+			subcommands: { run: { options: enumOption } },
+		});
+		st.deepEqual(out, [], 'the subcommand keeps usage off stdout');
+		st.ok(err.some((line) => line.includes('Usage')), 'and puts it on stderr');
+	});
+
+	t.test('an explicitly `undefined` `usageOnError` is treated as absent', async (st) => {
+		const { out } = await streams({
+			args: ['--level', 'nope'],
+			usageOnError: undefined,
+			options: enumOption,
+		});
+		st.ok(out.some((line) => line.includes('Usage')), 'the default applies rather than throwing');
+	});
+
+	t.test('an invalid value throws', async (st) => {
+		try {
+			await pargs(entrypoint, { usageOnError: /** @type {never} */ ('nope') });
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`usageOnError`/, 'the message mentions `usageOnError`');
+		}
+	});
+});
+
 test('getVersion - empty string when no package.json provides a version', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));
