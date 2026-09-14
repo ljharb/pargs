@@ -150,7 +150,10 @@ export default async function pargs(entrypointPath, obj) {
 
 		entries(enums).forEach(([key, config]) => {
 			const value = results.values[key];
-			if (!config.choices.includes(value)) {
+			if (typeof value === 'undefined') {
+				return;
+			}
+			if (![].concat(/** @type {never} */ (value)).every((v) => config.choices.includes(v))) {
 				errors[errors.length] = `Error: Invalid value for option "${key}"`;
 			}
 		});

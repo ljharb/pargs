@@ -64,7 +64,7 @@ See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilp
  - `allowNegative`: can not be set to `false`.
  - `args`: can not provide; pargs always uses `process.cwd()` - this may be added in the future, though.
  - `options.type`: in addition to `'boolean'` and `'string'`:
-   - `'enum'`: when provided, a `choices` string array is also required.
+   - `'enum'`: when provided, a `choices` string array is also required. The value is validated only when one is present - an option that was not passed and has no `default` is not an error. With `multiple`, each element is validated individually.
    - `'number'`: validates the value is a finite number and coerces it from a string.
    - `'integer'`: validates the value is a finite integer and coerces it from a string.
  - `allowPositionals`: in addition to a boolean, or an integer representing the maximum number of allowed positional arguments.

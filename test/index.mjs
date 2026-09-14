@@ -762,6 +762,119 @@ test('pargs - enum validation', async (t) => {
 	});
 });
 
+test('pargs - enum validation only applies to provided values', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await writeFile(entrypoint, '// test file');
+
+	t.test('unprovided enum with no default', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+				},
+			},
+		});
+		st.deepEqual(result.errors, [], 'no errors when the option is absent');
+		st.equal('level' in result.values, false, 'the key is absent from `values`');
+	});
+
+	t.test('unprovided `multiple` enum with no default', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+					multiple: true,
+				},
+			},
+		});
+		st.deepEqual(result.errors, [], 'no errors when the option is absent');
+		st.equal('level' in result.values, false, 'the key is absent from `values`');
+	});
+
+	t.test('`multiple` enum with all valid values', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=debug', '--level=info'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+					multiple: true,
+				},
+			},
+		});
+		st.deepEqual(result.values.level, ['debug', 'info'], 'collects every value');
+		st.deepEqual(result.errors, [], 'no errors when every element is a valid choice');
+	});
+
+	t.test('`multiple` enum with one invalid value', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=debug', '--level=nope'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+					multiple: true,
+				},
+			},
+		});
+		st.deepEqual(result.errors, ['Error: Invalid value for option "level"'], 'one error when any element is an invalid choice');
+	});
+
+	t.test('`multiple` enum with a default', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+					multiple: true,
+					default: ['info'],
+				},
+			},
+		});
+		st.deepEqual(result.values.level, ['info'], 'uses the default');
+		st.deepEqual(result.errors, [], 'no errors for a valid default');
+	});
+
+	t.test('`multiple` enum with an empty default', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+					multiple: true,
+					default: /** @type {string[]} */ ([]),
+				},
+			},
+		});
+		st.deepEqual(result.values.level, [], 'uses the empty default');
+		st.deepEqual(result.errors, [], 'no errors for an empty default');
+	});
+
+	t.test('a default outside `choices` still errors', async (st) => {
+		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		const result = await pargs(entrypoint, {
+			options: {
+				level: {
+					type: 'enum',
+					choices: ['debug', 'info'],
+					default: 'nope',
+				},
+			},
+		});
+		st.deepEqual(result.errors, ['Error: Invalid value for option "level"'], 'a provided (defaulted) value is still validated');
+	});
+});
+
 test('pargs - number type validation', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));
