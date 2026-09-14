@@ -1525,6 +1525,135 @@ test('pargs - help() error output path coverage', async (t) => {
 	});
 });
 
+test('pargs - `partialValues`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await writeFile(entrypoint, '// test file');
+
+	t.test('without the flag, everything is discarded', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['pos', '--nope', '-o', 'OUT.md'],
+			allowPositionals: true,
+			options: { output: { type: 'string', short: 'o' } },
+		});
+		st.deepEqual(result.values, {}, '`values` is empty');
+		st.deepEqual(result.positionals, [], '`positionals` is empty');
+		st.equal(result.errors.length, 1, 'the fatal error is reported');
+	});
+
+	t.test('salvages the options that parsed cleanly', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--nope', '-o', 'OUT.md'],
+			partialValues: true,
+			options: { output: { type: 'string', short: 'o' } },
+		});
+		st.deepEqual(result.values, { output: 'OUT.md', help: false, version: false }, 'the good option survives');
+		st.deepEqual(result.errors, ["Error: Unknown option '--nope'"], 'only the fatal error is reported');
+	});
+
+	t.test('keeps positionals', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['pos', '--nope'],
+			partialValues: true,
+			allowPositionals: true,
+		});
+		st.deepEqual(result.positionals, ['pos'], 'positionals come from the loose reparse');
+	});
+
+	t.test('drops values that contradict the declared type', async (st) => {
+		const boolWithString = await pargs(entrypoint, {
+			args: ['--verbose=x'],
+			partialValues: true,
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.equal('verbose' in boolWithString.values, false, 'a string on a boolean is dropped');
+
+		const stringWithoutValue = await pargs(entrypoint, {
+			args: ['-o'],
+			partialValues: true,
+			options: { output: { type: 'string', short: 'o' } },
+		});
+		st.equal('output' in stringWithoutValue.values, false, 'a valueless string option is dropped');
+	});
+
+	t.test('keeps `multiple` values', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--tag', 'a', '--tag', 'b', '--nope'],
+			partialValues: true,
+			options: { tag: { type: 'string', multiple: true } },
+		});
+		st.deepEqual(result.values.tag, ['a', 'b'], 'every occurrence survives');
+	});
+
+	t.test('coerces numbers, and drops invalid ones', async (st) => {
+		const good = await pargs(entrypoint, {
+			args: ['--ratio', '1.5', '--nope'],
+			partialValues: true,
+			options: { ratio: { type: 'number' } },
+		});
+		st.equal(good.values.ratio, 1.5, 'a fractional number survives on `number`');
+
+		const ports = await pargs(entrypoint, {
+			args: ['--port', '80', '--port', '443', '--nope'],
+			partialValues: true,
+			options: { port: { type: 'number', multiple: true } },
+		});
+		st.deepEqual(ports.values.port, [80, 443], 'a `multiple` number is coerced element-wise');
+
+		const badInteger = await pargs(entrypoint, {
+			args: ['--count', '1.5', '--nope'],
+			partialValues: true,
+			options: { count: { type: 'integer' } },
+		});
+		st.equal('count' in badInteger.values, false, 'a fractional value is dropped on `integer`');
+
+		const goodInteger = await pargs(entrypoint, {
+			args: ['--count', '2', '--nope'],
+			partialValues: true,
+			options: { count: { type: 'integer' } },
+		});
+		st.equal(goodInteger.values.count, 2, 'a whole value survives on `integer`');
+	});
+
+	t.test('applies `enum` choices', async (st) => {
+		const good = await pargs(entrypoint, {
+			args: ['--level', 'debug', '--nope'],
+			partialValues: true,
+			options: { level: { type: 'enum', choices: ['debug', 'info'] } },
+		});
+		st.equal(good.values.level, 'debug', 'a valid choice survives');
+
+		const bad = await pargs(entrypoint, {
+			args: ['--level', 'nope', '--bogus'],
+			partialValues: true,
+			options: { level: { type: 'enum', choices: ['debug', 'info'] } },
+		});
+		st.equal('level' in bad.values, false, 'an invalid choice is dropped');
+		st.equal(bad.errors.length, 1, 'only the fatal error is reported');
+	});
+
+	t.test('does not leak undeclared options', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-thing', '--nope'],
+			partialValues: true,
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.equal('thing' in result.values, false, 'a negated undeclared option is dropped');
+	});
+
+	t.test('keeps a declared negation', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-verbose', '--nope'],
+			partialValues: true,
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.equal(result.values.verbose, false, '`--no-verbose` survives');
+	});
+});
+
 test('pargs - rethrows non-ParseArgsError exceptions', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

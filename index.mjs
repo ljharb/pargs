@@ -31,6 +31,40 @@ const {
 // splice is still its to perform; it can not be expressed in the public config
 const kMutateArgv = Symbol('pargs: may splice process.argv');
 
+// Salvage what can be salvaged from a loose (`strict: false`) reparse after a
+// fatal parse error: keep only declared options whose parsed value still
+// matches the declared type, applying the same coercion the strict path does.
+/** @type {(schema: { normalized: Record<string, any>, options: Record<string, any> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
+function partialValues(schema, looseValues) {
+	const { normalized, options } = schema;
+	return fromEntries(entries(looseValues).flatMap(([key, value]) => {
+		if (!hasOwn(normalized, key)) {
+			return [];
+		}
+		const list = [].concat(/** @type {never} */ (value));
+		const { multiple } = normalized[key];
+		// `normalizedOptions` has already rewritten `enum`/`number`/`integer` to
+		// `'string'`, so the declared type comes off the original config - except
+		// for the injected `help`/`version`, which only exist in the normalized one
+		const { type } = options[key] ?? normalized[key];
+		const typesMatch = type === 'boolean'
+			? list.every((v) => typeof v === 'boolean')
+			: list.every((v) => typeof v === 'string');
+		if (!typesMatch) {
+			return [];
+		}
+		if (type === 'enum') {
+			return list.every((v) => options[key].choices.includes(v)) ? [[key, value]] : [];
+		}
+		if (type === 'number' || type === 'integer') {
+			const nums = list.map(Number);
+			const valid = nums.every((num) => Number.isFinite(num) && (type !== 'integer' || Number.isInteger(num)));
+			return valid ? [[key, multiple ? nums : nums[0]]] : [];
+		}
+		return [[key, value]];
+	}));
+}
+
 /** @type {import('./index.d.mts').default} */
 export default async function pargs(entrypointPath, obj) {
 	const realEntrypointPath = realpathSync(entrypointPath);
@@ -107,6 +141,8 @@ export default async function pargs(entrypointPath, obj) {
 	// `version` is provided automatically, but a user-defined `version` option
 	// (with its own handling) is preferred over the built-in one.
 	const hasUserVersion = !!passedConfig.options && 'version' in passedConfig.options;
+
+	const partial = !!passedConfig.partialValues;
 
 	const enums = { __proto__: null };
 	const numbers = { __proto__: null };
@@ -311,7 +347,11 @@ export default async function pargs(entrypointPath, obj) {
 	} catch (e) {
 		const fakeErrors = [`Error: ${!!e && typeof e === 'object' && 'message' in e && e.message}`];
 		if (isParseArgsError(e)) {
-			const { tokens } = parseArgs({
+			const {
+				tokens,
+				values: looseValues,
+				positionals: loosePositionals,
+			} = parseArgs({
 				...newObj,
 				strict: false,
 				allowPositionals: true,
@@ -326,8 +366,16 @@ export default async function pargs(entrypointPath, obj) {
 
 					process.exit();
 				},
-				values: {},
-				positionals: [],
+				values: partial
+					? partialValues(
+						{
+							normalized: normalizedOptions,
+							options: passedConfig.options ?? {},
+						},
+						looseValues,
+					)
+					: {},
+				positionals: partial ? loosePositionals : [],
 				errors: fakeErrors,
 				...obj.tokens && { tokens },
 			};

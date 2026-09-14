@@ -62,6 +62,7 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 	positionals?: readonly PositionalConfig[];
 	description?: string | StructuredDescription;
 	negation?: NegationPolicy;
+	partialValues?: boolean;
 };
 
 export type PargsRootConfig = PargsConfig & {
