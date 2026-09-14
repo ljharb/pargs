@@ -31,6 +31,10 @@ const {
 // splice is still its to perform; it can not be expressed in the public config
 const kMutateArgv = Symbol('pargs: may splice process.argv');
 
+// a subcommand that inherited `version` from its parent did not write it there
+// itself, so a clash with its own `version` option was not declared in one place
+const kInheritedVersion = Symbol('pargs: `version` was inherited');
+
 // Salvage what can be salvaged from a loose (`strict: false`) reparse after a
 // fatal parse error: keep only declared options whose parsed value still
 // matches the declared type, applying the same coercion the strict path does.
@@ -143,6 +147,28 @@ export default async function pargs(entrypointPath, obj) {
 	// (with its own handling) is preferred over the built-in one.
 	const hasUserVersion = !!passedConfig.options && 'version' in passedConfig.options;
 
+	// a root `version` of `false` drops the built-in `--version` entirely; a string
+	// is printed verbatim, so a caller can opt out of the `v` prefix, or print more
+	// than the bare number. `true`, or absent, is the `package.json` lookup.
+	// an explicitly `undefined` `version` is "absent", so that spreading an optional
+	// field is not a startup error.
+	const versionConfig = typeof obj.version === 'undefined' ? true : obj.version;
+	if (typeof versionConfig !== 'boolean' && typeof versionConfig !== 'string') {
+		throw new TypeError('Error: `version` must be a boolean or a string');
+	}
+	const versionInherited = !!(/** @type {Record<symbol, boolean>} */ (obj))[kInheritedVersion];
+	if (hasUserVersion && versionConfig !== true && !versionInherited) {
+		throw new TypeError('Error: `version` is not allowed when a `version` option is declared');
+	}
+	const hasBuiltinVersion = !hasUserVersion && versionConfig !== false;
+
+	// the `version` policy is inherited by subcommands: a CLI that says it has no
+	// built-in `--version`, or that prints its own string, must mean that at every
+	// level. A subcommand may declare its own to override it.
+	const inherited = {
+		...typeof obj.version !== 'undefined' && { version: obj.version },
+	};
+
 	const partial = !!passedConfig.partialValues;
 
 	/** @type {Record<string, { choices: readonly string[] }>} */
@@ -186,7 +212,7 @@ export default async function pargs(entrypointPath, obj) {
 				type: 'boolean',
 			},
 		],
-	]).concat(hasUserVersion ? [] : [
+	]).concat(hasBuiltinVersion ? [
 		[
 			'version',
 			{
@@ -194,7 +220,7 @@ export default async function pargs(entrypointPath, obj) {
 				type: 'boolean',
 			},
 		],
-	]));
+	] : []));
 
 	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions }} */
 	const newObj = {
@@ -290,6 +316,7 @@ export default async function pargs(entrypointPath, obj) {
 		let command;
 		/** @type {undefined | string} */
 		let commandName;
+		let commandConfig;
 		// the top level owns the `process.argv` splice, and only when it is the
 		// thing being parsed; a nested call inherits the answer from its parent.
 		const mayMutateArgv = hasOwn(obj, kMutateArgv)
@@ -308,11 +335,16 @@ export default async function pargs(entrypointPath, obj) {
 			if (typeof commandName === 'string') {
 				// the parent's routing decides what the subcommand sees, so its args are
 				// injected after the subcommand's own config, not before it
-				command = await pargs(entrypointPath, {
+				commandConfig = {
+					...inherited,
 					...subcommands[commandName],
 					args: knownSubcommand ? argv.slice(1) : argv,
 					[kMutateArgv]: mayMutateArgv,
-				});
+					// only mark it inherited when the subcommand did not write its own - a
+					// clash it declared itself is still an error
+					[kInheritedVersion]: hasOwn(inherited, 'version') && !hasOwn(subcommands[commandName], 'version'),
+				};
+				command = await pargs(entrypointPath, commandConfig);
 			} else {
 				const subcommand = argv[0];
 				errors[errors.length] = `Error: unknown command${subcommand ? ` "${subcommand}"` : ''}`;
@@ -324,10 +356,22 @@ export default async function pargs(entrypointPath, obj) {
 		// (command-listing) help rather than the default command's own help.
 		const helpValues = routeToDefault && command ? command.values : results.values;
 		const helpErrors = routeToDefault && command ? command.errors : errors;
+		// the `version` policy is read from whichever level parsed the flag - the
+		// routed default command's *merged* config, so that what it inherited from
+		// the root counts, not just what it declared itself
+		const helpConfig = routeToDefault && commandConfig ? commandConfig : obj;
+		const helpVersionConfig = typeof helpConfig.version === 'undefined' ? true : helpConfig.version;
+		// a `version` option declared at *this* level means the caller prints it
+		// themselves, no matter which level ended up parsing the flag
+		const helpBuiltinVersion = !hasUserVersion
+			&& !(helpConfig.options && 'version' in helpConfig.options)
+			&& helpVersionConfig !== false;
 		async function help() {
-			if (!hasUserVersion && helpValues.version) {
-				const version = await getVersion(realEntrypointPath);
-				console.log(version ? `v${version}` : version);
+			if (helpBuiltinVersion && helpValues.version) {
+				const version = typeof helpVersionConfig === 'string'
+					? helpVersionConfig
+					: await getVersion(realEntrypointPath).then((v) => (v ? `v${v}` : v));
+				console.log(version);
 				process.exit();
 			}
 			if (('help' in helpValues && helpValues.help) || helpErrors.length > 0) {

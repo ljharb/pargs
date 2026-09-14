@@ -115,11 +115,15 @@ export default function generateHelp(name, config) {
 		]);
 	});
 	optionRows[optionRows.length] = [
-		'Options', '    --help', 'Show this help text',
+		'Options',
+		'    --help',
+		'Show this help text',
 	];
-	if (!(options && 'version' in options)) {
+	if (!(options && 'version' in options) && config.version !== false) {
 		optionRows[optionRows.length] = [
-			'Options', '    --version', 'Show the version number',
+			'Options',
+			'    --version',
+			'Show the version number',
 		];
 	}
 

@@ -53,8 +53,24 @@ Option defaults are shown as `(default: …)`, except that a boolean option’s 
 
 ### Version
 
-`--version` is provided automatically: the same `await help()` call handles it, printing the `version` field from the nearest `package.json` and exiting.
-Unlike `help`, `version` is not reserved - if you define your own `version` option, yours (and your own handling) is used instead, and the built-in one is not added.
+`--version` is provided automatically: the same `await help()` call handles it, printing the `version` field from the nearest `package.json`, prefixed with `v`, and exiting.
+
+The root `version` config controls it.
+It is **deprecated**, and marked `@deprecated` in the types:
+it exists so a CLI moving onto pargs can keep the exact `--version` output it already ships, and new code should take the default.
+
+ - `true`, `undefined`, or absent: the `package.json` lookup described above.
+ - a string: printed verbatim, with no `v` prefix and no `package.json` lookup - useful to match an existing CLI's output, or to print more than the bare number.
+ - `false`: no built-in `--version` at all. It is then an unknown option, and the generated help omits its row.
+
+Subcommands inherit the root `version`: a CLI that has no built-in `--version`, or that prints its own string, means that at every level.
+A subcommand may declare its own `version` to override what it inherited.
+
+Unlike `help`, `version` is not reserved - if you define your own `version` option, yours is used instead and the built-in one is not added.
+**Note that this means you must print it yourself**; `await help()` will not, and a `--version` it does not own falls through to your program's normal path - including when a `defaultCommand` is what parsed the flag.
+Declaring an `options.version` alongside a root `version` of `false` or a string throws, since the two disagree about who owns `--version`;
+a root `version` of `true` is the default, so it is accepted and your option wins.
+That applies to one level: a subcommand declaring its own `version` option alongside a `version` it merely *inherited* yields to the option instead of throwing, since the two were not written in one place.
 
 ### Options
 

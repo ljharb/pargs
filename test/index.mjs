@@ -123,6 +123,228 @@ test('pargs - version flag', async (t) => {
 	t.end();
 });
 
+test('pargs - `version` config', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '4.5.6' })),
+	]);
+
+	/** @type {(st: import('tape').Test, result: { help: () => Promise<void> }) => Promise<string[]>} */
+	async function printed(st, result) {
+		const logCapture = st.capture(console, 'log');
+		st.capture(process, 'exit', () => {
+			throw new Error('EXIT');
+		});
+		try {
+			await result.help();
+		} catch { /**/ }
+		// tape writes its own TAP through `console.log`, so every assertion made
+		// after this returns would have its `ok`/`not ok` line swallowed while the
+		// capture is still in place
+		logCapture.restore?.();
+		return logCapture().map((call) => call.args.join(' '));
+	}
+
+	t.test('`version: true` matches the default', async (st) => {
+		const result = await pargs(entrypoint, { args: ['--version'], version: true });
+		const logs = await printed(st, result);
+		st.deepEqual(logs, ['v4.5.6'], 'prints the prefixed package version');
+	});
+
+	t.test('an inherited `version` yields to a subcommand\'s own `version` option', async (st) => {
+		// the root wrote `version`, the subcommand wrote the option: the two were not
+		// declared in one place, so the option wins rather than the config throwing
+		const config = {
+			version: 'mytool 1.2.3',
+			subcommands: {
+				ls: {},
+				print: { options: { version: { type: /** @type {'string'} */ ('string') } } },
+			},
+		};
+
+		const routed = await pargs(entrypoint, { ...config, args: ['print', '--version', '3'] });
+		st.deepEqual(routed.errors, [], 'the subcommand parses');
+		st.equal(routed.command.values.version, '3', 'its own option owns `--version`');
+
+		const sibling = await pargs(entrypoint, { ...config, args: ['ls'] });
+		st.deepEqual(sibling.errors, [], 'a sibling without one is unaffected');
+
+		// but writing both at the same level is still a contradiction
+		try {
+			await pargs(entrypoint, {
+				args: ['print'],
+				subcommands: { print: { version: 'x', options: { version: { type: /** @type {'string'} */ ('string') } } } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.match(/** @type {Error} */ (e).message, /not allowed when a .version. option/, 'a same-level clash still throws');
+		}
+	});
+
+	t.test('a string `version` is printed verbatim', async (st) => {
+		const result = await pargs(entrypoint, { args: ['--version'], version: '4.5.6' });
+		const logs = await printed(st, result);
+		st.deepEqual(logs, ['4.5.6'], 'no `v` prefix, and no `package.json` lookup');
+	});
+
+	t.test('`version: false` drops the option', async (st) => {
+		const result = await pargs(entrypoint, { args: ['--version'], version: false });
+		st.deepEqual(result.errors, ["Error: Unknown option '--version'"], '`--version` is unknown');
+		st.equal('version' in result.values, false, 'no `version` key in `values`');
+	});
+
+	t.test('`version: false` omits the help row', (st) => {
+		const help = generateHelp('cli', { version: false, options: { verbose: { type: 'boolean' } } });
+		st.doesNotMatch(help, /--version/, 'no `--version` row is generated');
+		st.match(help, /--help/, 'the `--help` row is still generated');
+		st.end();
+	});
+
+	t.test('a non-boolean, non-string `version` throws', async (st) => {
+		try {
+			// @ts-expect-error
+			await pargs(entrypoint, { version: 1 });
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`version`/, 'the message mentions `version`');
+		}
+	});
+
+	t.test('`version` alongside a user-declared `version` option throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				version: '1.2.3',
+				options: { version: { type: 'boolean' } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /not allowed/, 'the message explains the conflict');
+		}
+	});
+
+	t.test('a routed `defaultCommand` uses its own `version`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--version'],
+			defaultCommand: 'build',
+			subcommands: {
+				build: { version: 'from-the-subcommand' },
+			},
+		});
+		const logs = await printed(st, result);
+		st.deepEqual(logs, ['from-the-subcommand'], 'the level that parsed the flag decides');
+	});
+
+	// `st.capture` swallows the TAP output of anything asserted while it is active,
+	// and leaves `process.exitCode` set, which suppresses tape's own summary
+	/** @type {(config: Record<string, unknown>) => Promise<{ out: string[], returned: boolean }>} */
+	async function handled(config) {
+		const result = await pargs(entrypoint, config);
+		/** @type {string[]} */
+		const out = [];
+		const realLog = console.log;
+		const realError = console.error;
+		const realExit = process.exit;
+		const realExitCode = process.exitCode;
+		console.log = (...args) => { out.push(args.join(' ')); };
+		console.error = () => {};
+		process.exit = () => {
+			throw new Error('EXIT');
+		};
+		let returned = false;
+		try {
+			await result.help();
+			returned = true;
+		} catch { /**/ } finally {
+			console.log = realLog;
+			console.error = realError;
+			process.exit = realExit;
+			process.exitCode = realExitCode;
+		}
+		return { out, returned };
+	}
+
+	t.test('subcommands inherit the root `version`', async (st) => {
+		const routedOff = await pargs(entrypoint, {
+			args: ['--version'],
+			version: false,
+			defaultCommand: 'build',
+			subcommands: { build: {} },
+		});
+		st.deepEqual(
+			routedOff.command.errors,
+			["Error: Unknown option '--version'"],
+			'`version: false` reaches a routed `defaultCommand`',
+		);
+
+		const routedString = await handled({
+			args: ['--version'],
+			version: 'custom-1.2.3',
+			defaultCommand: 'build',
+			subcommands: { build: {} },
+		});
+		st.deepEqual(routedString.out, ['custom-1.2.3'], 'a string reaches a routed `defaultCommand`');
+
+		const named = await pargs(entrypoint, {
+			args: ['run', '--version'],
+			version: false,
+			subcommands: { run: {} },
+		});
+		st.deepEqual(
+			named.command.errors,
+			["Error: Unknown option '--version'"],
+			'`version: false` reaches a named subcommand',
+		);
+	});
+
+	t.test('a subcommand overrides what it inherited', async (st) => {
+		const result = await handled({
+			args: ['run', '--version'],
+			version: 'from-the-root',
+			subcommands: { run: { version: 'from-the-subcommand' } },
+		});
+		st.deepEqual(result.out, ['from-the-subcommand'], 'the subcommand wins');
+	});
+
+	t.test('a user-declared `version` option is honored through a `defaultCommand`', async (st) => {
+		// regression guard: pargs must not print a version the caller owns, no
+		// matter which level ended up parsing the flag
+		const result = await handled({
+			args: ['--version'],
+			options: { version: { type: 'boolean' } },
+			defaultCommand: 'build',
+			subcommands: { build: {} },
+		});
+		st.deepEqual(result.out, [], 'pargs prints nothing');
+		st.equal(result.returned, true, 'and does not exit, so the caller can print it');
+	});
+
+	t.test('an explicitly `undefined` `version` is treated as absent', async (st) => {
+		const result = await pargs(entrypoint, { args: [], version: undefined });
+		st.equal(result.values.version, false, 'the built-in option is still registered');
+	});
+
+	t.test('a user-declared `version` option leaves `values` usable', async (st) => {
+		// also a compile-time guard: if `ReservedValues` starts intersecting
+		// `{ version: boolean }` on top of the declared option again, `values`
+		// reduces to `never` and these reads stop type-checking
+		const result = await pargs(entrypoint, {
+			args: ['--version', 'v9', '--other'],
+			options: {
+				version: { type: 'string' },
+				other: { type: 'boolean' },
+			},
+		});
+		st.equal(result.values.version, 'v9', 'the declared option parses');
+		st.equal(result.values.other, true, 'and so does everything alongside it');
+	});
+});
+
 test('getVersion - empty string when no package.json provides a version', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

@@ -65,6 +65,15 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 	partialValues?: boolean;
 	subcommands?: Readonly<Record<string, PargsConfig>>;
 	defaultCommand?: string;
+	/**
+	 * Override the built-in `--version` output: a string is printed verbatim,
+	 * `false` removes the option entirely.
+	 *
+	 * @deprecated a migration aid, so an existing CLI can keep the exact
+	 * `--version` output it already ships. New code should take the default -
+	 * the `v`-prefixed version from the nearest `package.json`.
+	 */
+	version?: boolean | string;
 };
 
 export type PargsRootConfig = PargsConfig;
@@ -103,8 +112,25 @@ type OptionValueType<O extends PargsOptionConfig> =
 // Check if an option has a default value
 type HasDefault<O> = O extends { default: any } ? true : false;
 
+// Did the config declare its own `version` option? Checked by key presence, since
+// the declaration is optional and so does not extend `{ version: unknown }`.
+type HasVersionOption<T> = T extends { options: infer O }
+	? 'version' extends keyof O ? true : false
+	: false;
+
+// `help` is always added. `version` is too, unless the config opted out of it, or
+// declared its own `version` option - in which case that option's own type governs,
+// and intersecting `{ version: boolean }` on top would reduce `values` to `never`.
+type ReservedValues<T> = { help: boolean } & (
+	T extends { version: false }
+		? {}
+		: HasVersionOption<T> extends true
+			? {}
+			: { version: boolean }
+);
+
 // Build the values type from options config
-type ValuesFromOptions<Options extends Record<string, PargsOptionConfig> | undefined> =
+type ValuesFromOptions<Options extends Record<string, PargsOptionConfig> | undefined, T = unknown> =
 	Options extends Record<string, PargsOptionConfig>
 		? {
 			// Required options (have default)
@@ -112,25 +138,24 @@ type ValuesFromOptions<Options extends Record<string, PargsOptionConfig> | undef
 		} & {
 			// Optional options (no default)
 			-readonly [K in keyof Options as HasDefault<Options[K]> extends true ? never : K]?: OptionValueType<Options[K]>;
-		} & {
-			// help and version are always added
-			help: boolean;
-			version: boolean;
-		}
-		: {
-			help: boolean;
-			version: boolean;
-		};
+		} & ReservedValues<T>
+		: ReservedValues<T>;
 
 // Build the command result type from subcommands config
-type SubcommandParsed<S extends Record<string, PargsConfig>> = {
-	[K in keyof S]: { name: K } & PargsParsed<S[K]>
+type SubcommandParsed<S extends Record<string, PargsConfig>, Root = unknown> = {
+	[K in keyof S]: { name: K } & PargsParsed<
+		// a subcommand inherits the root `version` unless it declares its own, so the
+		// result type has to be built from the config it is actually parsed with
+		S[K] extends { version: unknown }
+			? S[K]
+			: Root extends { version: infer V } ? S[K] & { version: V } : S[K]
+	>
 }[keyof S];
 
 export type PargsParsed<T extends (PargsConfig | PargsRootConfig)> = (
 	T extends PargsRootConfig
 		? T['subcommands'] extends infer S extends Record<string, PargsConfig>
-			? { command: SubcommandParsed<S> }
+			? { command: SubcommandParsed<S, T> }
 			: {}
 		: {}
 ) & {
@@ -139,8 +164,8 @@ export type PargsParsed<T extends (PargsConfig | PargsRootConfig)> = (
 	// under `partialValues`, the error path returns only what survived the loose
 	// reparse, which can omit even an option that declared a `default`
 	values: T extends { partialValues: true }
-		? Partial<ValuesFromOptions<T['options']>>
-		: ValuesFromOptions<T['options']>,
+		? Partial<ValuesFromOptions<T['options'], T>>
+		: ValuesFromOptions<T['options'], T>,
 	positionals: string[],
 } & (
 	T extends { tokens: true } ? { tokens: Token[] } : {}
