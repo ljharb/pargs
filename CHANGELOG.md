@@ -5,7 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.4.2...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.5.0...v2.0.0) - 2025-10-24
+
+## [v1.5.0](https://github.com/ljharb/pargs/compare/v1.4.2...v1.5.0) - 2026-09-14
+
+### Commits
+
+- [New] add a `partialValues` config option [`51e63f7`](https://github.com/ljharb/pargs/commit/51e63f7544d9f084f1cfcbab730ba445d036f83a)
+- [New] support an `args` config option [`5f29a44`](https://github.com/ljharb/pargs/commit/5f29a4481522baf4fdd7cb58530e1f2b6c638f82)
+- [New] add a `negation` config option [`192fef4`](https://github.com/ljharb/pargs/commit/192fef4d20954ca2f91ee062b82bc4c404fa815a)
+- [Fix] only validate provided `enum` values, and validate `multiple` enums element-wise [`b128b34`](https://github.com/ljharb/pargs/commit/b128b3435d9e8cb66b04a5ef430fbc6ed68a1cde)
+- [Dev Deps] update `@arethetypeswrong/cli`, `@ljharb/eslint-config`, `@types/node`, `auto-changelog`, `eslint`, `tape` [`72a03a3`](https://github.com/ljharb/pargs/commit/72a03a39a51768e4bd9d15260016ba3b8b71a205)
+- [meta] `dtx-clean --setup` [`54d43ae`](https://github.com/ljharb/pargs/commit/54d43ae30f74be2205bda862841fbdbcd4a445e3)
+- [eslint] disable a dumb rule [`4a120d9`](https://github.com/ljharb/pargs/commit/4a120d98ee93562517e5daed343b82be65e0bf86)
 
 ## [v1.4.2](https://github.com/ljharb/pargs/compare/v1.4.1...v1.4.2) - 2026-06-18
 
