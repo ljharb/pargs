@@ -79,14 +79,14 @@ export default function generateHelp(name, config) {
 
 	const usage = [`Usage: ${name}`];
 	if (subcommands) {
-		usage.push('<command>');
+		usage[usage.length] = '<command>';
 	}
 	usage.push(options && keys(options).length > 0 ? '[options]' : '[--help]');
 	if (!subcommands && (allowPositionals || positionals?.length)) {
 		if (positionals?.length) {
 			usage.push(...usagePositionals(positionals, min));
 		} else {
-			usage.push(min > 0 ? '<args...>' : '[args...]');
+			usage[usage.length] = min > 0 ? '<args...>' : '[args...]';
 		}
 	}
 	lines.push(usage.join(' '));
@@ -114,19 +114,19 @@ export default function generateHelp(name, config) {
 			`${value.description || ''}${formatDefault(value)}`.trim(),
 		]);
 	});
-	optionRows.push([
+	optionRows[optionRows.length] = [
 		'Options', '    --help', 'Show this help text',
-	]);
+	];
 	if (!(options && 'version' in options)) {
-		optionRows.push([
+		optionRows[optionRows.length] = [
 			'Options', '    --version', 'Show the version number',
-		]);
+		];
 	}
 
 	const groupOrder = ['Options'];
 	optionRows.forEach(([group]) => {
 		if (!groupOrder.includes(group)) {
-			groupOrder.push(group);
+			groupOrder[groupOrder.length] = group;
 		}
 	});
 
