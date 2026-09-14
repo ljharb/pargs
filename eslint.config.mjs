@@ -6,6 +6,7 @@ export default [
 		rules: {
 			complexity: 0,
 			'func-style': 0,
+			'max-lines': 0,
 			'max-lines-per-function': 0,
 			'max-statements': 0,
 			'multiline-comment-style': 0,
