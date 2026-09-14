@@ -1,6 +1,4 @@
-/** @import { ParseArgsError } from './index.d.mts' */
-
-/** @type {(e: unknown) => e is ParseArgsError} */
+/** @type {(e: unknown) => e is import('./index.d.mts').ParseArgsError} */
 export default function isParseArgsError(e) {
 	return !!e
 		&& typeof e === 'object'
