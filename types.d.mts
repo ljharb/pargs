@@ -29,13 +29,46 @@ export type ShortsConfig = boolean | {
 	version?: string;
 };
 
-export type PargsOptionConfig = (ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig) & {
+type BooleanOptionConfig = Omit<ParseArgsOptionConfig, 'type'> & { type: 'boolean' };
+
+type StringOptionConfig = Omit<ParseArgsOptionConfig, 'type'> & { type: 'string' };
+
+type ValueOptionConfig = StringOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig;
+
+type OptionMeta = {
 	description?: string;
 	placeholder?: string;
 	group?: string;
 	defaultDescription?: string;
 	negation?: NegationPolicy;
 };
+
+type ArityKeys = {
+	/**
+	 * The option takes the next argument as its value even when that argument
+	 * looks like an option.
+	 *
+	 * @deprecated a migration aid, so an existing CLI can keep accepting
+	 * `--opt --value`. `util.parseArgs` rejects that as ambiguous and names the
+	 * unambiguous spelling in the error - `--opt=--value` - which new code
+	 * should use. Note that a greedy option swallows whatever follows it,
+	 * `--help` and `--version` included.
+	 */
+	greedy?: boolean;
+};
+
+/**
+ * A `boolean` option already has the shape the arity keys exist to produce, so
+ * none of them applies to one; declaring one is rejected here as well as at
+ * runtime.
+ */
+type NoArityKeys = {
+	greedy?: never;
+};
+
+export type PargsOptionConfig =
+	| (BooleanOptionConfig & OptionMeta & NoArityKeys)
+	| (ValueOptionConfig & OptionMeta & ArityKeys);
 
 export type PositionalConfig = {
 	name: string;

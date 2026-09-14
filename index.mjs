@@ -5,6 +5,7 @@ import isParseArgsError from './isParseArgsError.mjs';
 import maybeStripColors from './maybeStripColors.mjs';
 import getHelpText, { getVersion } from './getHelpText.mjs';
 import resolveShorts, { kInheritedShorts } from './resolveShorts.mjs';
+import normalizeArgs, { needsNormalizing } from './normalizeArgs.mjs';
 
 const {
 	hasOwn,
@@ -197,6 +198,10 @@ export default async function pargs(entrypointPath, obj) {
 			throw new TypeError(`Error: \`negation\` must be either "exclusive" or "last-wins"; \`${key}\` is invalid`);
 		}
 
+		if (value.type === 'boolean' && value.greedy) {
+			throw new TypeError(`Error: \`greedy\` is not allowed on a boolean option; \`${key}\` is invalid`);
+		}
+
 		if (value.type === 'enum') {
 			if (!isArray(value.choices) || !value.choices.every((/** @type {unknown} */ x) => typeof x === 'string')) {
 				throw new TypeError(`Error: enum choices must be an array of strings; \`${key}\` is invalid`);
@@ -237,7 +242,7 @@ export default async function pargs(entrypointPath, obj) {
 		],
 	] : []));
 
-	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions }} */
+	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions, args: readonly string[] }} */
 	const newObj = {
 		...passedConfig,
 		args: subcommands ? routeToDefault ? [] : argv.slice(0, 1) : argv,
@@ -247,6 +252,14 @@ export default async function pargs(entrypointPath, obj) {
 		allowPositionals: !!subcommands || typeof passedConfig.allowPositionals !== 'undefined',
 		strict: true,
 	};
+
+	// only rewrite the argument list when some option actually asks for an arity
+	// `parseArgs` can not express, so that every config that does not opt in gets
+	// back the identical array - and therefore the identical `tokens`
+	const normalizing = needsNormalizing(normalizedOptions);
+	if (normalizing) {
+		newObj.args = normalizeArgs(/** @type {string[]} */ (newObj.args), normalizedOptions);
+	}
 
 	try {
 		const { tokens, ...results } = parseArgs(newObj);

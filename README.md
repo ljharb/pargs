@@ -80,6 +80,8 @@ That applies to one level: a subcommand declaring its own `version` option along
 
 See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilparseargsconfig) for some context.
 
+In TypeScript, `options` is a union discriminated on `type`, so a table hoisted into its own variable needs `as const` (or `'string' as const` per entry) - otherwise `type` widens to `string` and matches no branch. Written inline in the call, it is inferred correctly as-is.
+
  - `strict`: can not be set to `false` - strictness all the way.
  - `allowNegative`: can not be set to `false`.
  - `usageOnError`: where the usage text goes when `help()` reports an error the user did not ask for. `'stdout'` is the default and current behavior; `'stderr'` keeps it off stdout, which matters for a CLI whose own output is piped or redirected; `false` prints no usage at all, matching what most parsers do on a bad flag. Error messages always go to stderr regardless. A `--help` the user explicitly asked for is program output, so it always prints, and always to stdout, even alongside an error and even under `false`. Inherited by subcommands.
@@ -90,6 +92,14 @@ See the [node.js parseArgs documentation](https://nodejs.org/api/util.html#utilp
    - `'enum'`: when provided, a `choices` string array is also required. The value is validated only when one is present - an option that was not passed and has no `default` is not an error. With `multiple`, each element is validated individually.
    - `'number'`: validates the value is a finite number and coerces it from a string.
    - `'integer'`: validates the value is a finite integer and coerces it from a string.
+ - `options[name].greedy`: **deprecated**, and marked `@deprecated` in the types - it exists so a CLI moving onto pargs can keep accepting `--opt --value`, which `util.parseArgs` rejects as ambiguous while naming the unambiguous spelling in the error (`--opt=--value`); that is what new code should use.
+The option takes the next argument as its value even when that argument looks like an option, so `--append-git-log --first-parent` works without the `=` form.
+`--` is never consumed - `--x --` keeps its *argument is ambiguous* error, and `--x=--` is the way to pass a literal `--`.
+Note that a greedy option swallows whatever follows it, **including `--help` and `--version`**; that is inherent to the arity, and matches how other parsers treat it.
+Not allowed on a `boolean` option.
+When any option in a config asks for an arity `util.parseArgs` can not express, the argument list is rewritten before parsing, so `tokens` describes the rewritten list:
+a fused value is reported as one token with `inlineValue: true`.
+Configs that do not opt in get back the identical array, and therefore identical `tokens`.
  - `partialValues`: when `true`, a fatal parse error (an unknown option, a missing option argument) returns whatever else parsed cleanly instead of an empty `values`. Only declared options survive, and only when the loosely-parsed value still matches the declared type; `enum` choices and `number`/`integer` coercion are applied as usual, and anything that fails is dropped. `errors` still holds only the single fatal error, `positionals` come from the loose reparse and so do not re-apply the configured positional policy, and an option with a `default` may be missing - so `values` is a partial of its usual type. Defaults to `false`, and does not inherit into subcommands.
  - `allowPositionals`: in addition to a boolean, or an integer representing the maximum number of allowed positional arguments.
  - `minPositionals`: an integer representing the minimum required number of positional arguments.

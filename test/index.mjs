@@ -8,6 +8,7 @@ import tmp from 'tmp';
 import pargs from '../index.mjs';
 import generateHelp from '../generateHelp.mjs';
 import getHelpText, { getVersion } from '../getHelpText.mjs';
+import normalizeArgs, { needsNormalizing } from '../normalizeArgs.mjs';
 
 const filename = fileURLToPath(import.meta.url);
 
@@ -881,6 +882,166 @@ test('pargs - `help({ exit })`', async (t) => {
 			'`help(null)` behaves like `help()`',
 		);
 	});
+});
+
+test('pargs - `greedy`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file');
+
+	const options = {
+		log: { type: /** @type {'string'} */ ('string'), greedy: true },
+		tag: { type: /** @type {'string'} */ ('string'), greedy: true, short: 't' },
+		out: { type: /** @type {'string'} */ ('string'), greedy: true, short: 'o' },
+		unreleased: { type: /** @type {'boolean'} */ ('boolean'), short: 'u' },
+		plain: { type: /** @type {'string'} */ ('string'), short: 'p' },
+	};
+
+	/** @type {(args: string[]) => Promise<any>} */
+	const parse = (args) => pargs(entrypoint, { args, allowPositionals: true, options });
+
+	t.test('consumes a dash-leading value', async (st) => {
+		st.equal((await parse(['--log', '--first-parent'])).values.log, '--first-parent', 'a long option takes the next token');
+		st.equal((await parse(['--log=--first-parent'])).values.log, '--first-parent', 'the inline form is unchanged');
+		st.equal((await parse(['--tag', '-v'])).values.tag, '-v', 'a short-looking value is taken too');
+		st.equal((await parse(['--tag', '-'])).values.tag, '-', 'a lone dash is a value either way');
+		st.equal((await parse(['--tag=--'])).values.tag, '--', 'the inline form can even be `--`');
+	});
+
+	t.test('works at the end of a short cluster', async (st) => {
+		const result = await parse(['-uo', '--x']);
+		st.equal(result.values.unreleased, true, 'the leading boolean still parses');
+		st.equal(result.values.out, '--x', 'the trailing value-taking short is greedy');
+	});
+
+	t.test('does not consume `--` or the end of the list', async (st) => {
+		const missing = await parse(['--log']);
+		st.match(missing.errors[0], /argument missing/, 'a trailing bare option is still an error');
+
+		const terminator = await parse(['--log', '--']);
+		st.match(terminator.errors[0], /ambiguous/, '`--` is never consumed as a value');
+	});
+
+	t.test('swallows `--help`, as any greedy option must', async (st) => {
+		const result = await parse(['-t', '--help']);
+		st.equal(result.values.tag, '--help', 'the value wins over the reserved option');
+		st.equal(result.values.help, false, '`--help` is not set');
+	});
+
+	t.test('leaves everything else alone', async (st) => {
+		st.deepEqual((await parse(['--', '-t'])).positionals, ['-t'], 'the terminator is respected');
+		st.equal((await parse(['--no-unreleased'])).values.unreleased, false, 'negation is untouched');
+		st.match((await parse(['-p', '-x'])).errors[0], /ambiguous/, 'a non-greedy option is unchanged');
+		st.match((await parse(['-uz'])).errors[0], /Unknown option/, 'a cluster ending in an unknown short is passed through');
+		st.equal((await parse(['-uu'])).values.unreleased, true, 'an all-boolean cluster is passed through');
+	});
+
+	t.test('never invents a value for a preceding plain option', async (st) => {
+		// `--plain --log --x`: the `--log` is `--plain`'s value, not an occurrence.
+		// Rewriting it would hand the caller `--log=--x`, which they never typed.
+		const salvaged = await pargs(entrypoint, {
+			args: ['--plain', '--log', '--x'],
+			allowPositionals: true,
+			partialValues: true,
+			options,
+		});
+		st.equal(salvaged.values.plain, '--log', 'the value is exactly the token the user typed');
+
+		const withTokens = await pargs(entrypoint, {
+			args: ['--plain', '--log', '--x'],
+			allowPositionals: true,
+			tokens: true,
+			options,
+		});
+		const token = withTokens.tokens.find((each) => each.kind === 'option' && each.name === 'plain');
+		st.equal(/** @type {Record<string, unknown>} */ (token).value, '--log', 'and the token agrees');
+	});
+
+	t.test('`greedy` on a boolean throws', async (st) => {
+		try {
+			// @ts-expect-error `greedy` is not allowed on a boolean option
+			await pargs(entrypoint, { options: { verbose: { type: 'boolean', greedy: true } } });
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`verbose` is invalid/, 'the message names the option');
+		}
+	});
+
+	t.test('a swallowed value does not mask the option after it', async (st) => {
+		// the lookback exists to avoid rewriting a token that is really the previous
+		// option's value - but one already swallowed by a greedy option is not
+		// pending, and treating it as such would leave the next option alone
+		const result = await parse(['--log', '--plain', '--tag', '--x']);
+		st.equal(result.values.log, '--plain', 'the first greedy option takes the option-looking token');
+		st.equal(result.values.tag, '--x', 'and the one after it still takes its own');
+		st.deepEqual(result.errors, [], 'with no errors');
+	});
+
+	t.test('`tokens` is untouched when nothing opts in', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--plain', 'x'],
+			tokens: true,
+			options: { plain: { type: 'string' } },
+		});
+		const token = result.tokens.find((tok) => tok.kind === 'option' && tok.name === 'plain');
+		if (!token || token.kind !== 'option') {
+			st.fail('the option token is present');
+			return;
+		}
+		st.pass('the option token is present');
+		// a rewritten argv would arrive as `--plain=x`, which parseArgs reports as an
+		// inline value; the separated spelling is what proves the original was parsed
+		st.equal(token.inlineValue, false, 'as a separated value, not a rewritten inline one');
+		st.equal(token.rawName, '--plain', 'with the spelling that was typed');
+	});
+});
+
+test('normalizeArgs', (t) => {
+	const options = {
+		log: { type: 'string', greedy: true },
+		tag: { type: 'string', greedy: true, short: 't' },
+		unreleased: { type: 'boolean', short: 'u' },
+		plain: { type: 'string', short: 'p' },
+	};
+
+	t.equal(needsNormalizing({}), false, 'an empty option set needs no normalizing');
+	t.equal(needsNormalizing({ plain: options.plain }), false, 'a plain option set needs no normalizing');
+	t.equal(needsNormalizing(options), true, 'a `greedy` option needs normalizing');
+
+	t.deepEqual(normalizeArgs(['--log', '--x'], options), ['--log=--x'], 'a dash-leading value is fused');
+	t.deepEqual(normalizeArgs(['--log', 'x'], options), ['--log', 'x'], 'an ordinary value is left as two tokens');
+	t.deepEqual(normalizeArgs(['-t', '--x'], options), ['-t--x'], 'a short fuses without an `=`');
+	t.deepEqual(normalizeArgs(['-ut', '--x'], options), ['-ut--x'], 'a cluster fuses on its last character');
+	t.deepEqual(normalizeArgs(['--', '--log', '--x'], options), ['--', '--log', '--x'], 'nothing after `--` is touched');
+	t.deepEqual(normalizeArgs(['--plain', '--x'], options), ['--plain', '--x'], 'a non-greedy option is untouched');
+	t.deepEqual(normalizeArgs(['--log'], options), ['--log'], 'a trailing bare option is untouched');
+	t.deepEqual(normalizeArgs(['--log', '--'], options), ['--log', '--'], '`--` is never fused');
+	t.deepEqual(normalizeArgs(['--log=x'], options), ['--log=x'], 'an inline value is untouched');
+	t.deepEqual(normalizeArgs(['-z'], options), ['-z'], 'an unknown short is untouched');
+	t.deepEqual(normalizeArgs(['pos'], options), ['pos'], 'a positional is untouched');
+	t.deepEqual(normalizeArgs(['-'], options), ['-'], 'a lone dash is untouched');
+
+	// a pending value for a plain option is that option's value, not an occurrence
+	t.deepEqual(normalizeArgs(['--plain', '--log', '--x'], options), ['--plain', '--log', '--x'], 'a pending long value is not rewritten');
+	t.deepEqual(normalizeArgs(['-p', '--log', '--x'], options), ['-p', '--log', '--x'], 'a pending short value is not rewritten');
+	t.deepEqual(normalizeArgs(['--plain=v', '--log', '--x'], options), ['--plain=v', '--log=--x'], 'an inline value leaves the next token free');
+	t.deepEqual(normalizeArgs(['-u', '--log', '--x'], options), ['-u', '--log=--x'], 'a preceding boolean leaves it free too');
+
+	// a positional that happens to look like a short cluster must stay a positional
+	t.deepEqual(normalizeArgs(['xt', '--x'], options), ['xt', '--x'], 'a positional resembling a cluster is untouched');
+
+	// `parseArgs` resolves a duplicated short to the first declaration, so the
+	// normalizer must agree about which option owns the letter
+	const duplicated = {
+		first: { type: 'string', short: 'x' },
+		second: { type: 'string', short: 'x', greedy: true },
+	};
+	t.deepEqual(normalizeArgs(['-x', '--foo'], duplicated), ['-x', '--foo'], '`-x` belongs to the first declaration, which is not greedy');
+
+	t.end();
 });
 
 test('getVersion - empty string when no package.json provides a version', async (t) => {
