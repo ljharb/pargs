@@ -345,6 +345,251 @@ test('pargs - `version` config', async (t) => {
 	});
 });
 
+test('pargs - `shorts`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '4.5.6' })),
+	]);
+
+	/** @type {(st: import('tape').Test, config: Record<string, unknown>, re: RegExp, msg: string) => Promise<void>} */
+	async function rejects(st, config, re, msg) {
+		try {
+			await pargs(entrypoint, /** @type {never} */ (config));
+			st.fail(`should have thrown: ${msg}`);
+		} catch (e) {
+			st.ok(e instanceof TypeError, `${msg}: throws a TypeError`);
+			st.match(/** @type {Error} */ (e).message, re, msg);
+		}
+	}
+
+	t.test('registers `-h` and `-V`', async (st) => {
+		const help = await pargs(entrypoint, { args: ['-h'], shorts: true });
+		st.equal(help.values.help, true, '`-h` sets help');
+		st.deepEqual(help.errors, [], 'no errors');
+
+		const version = await pargs(entrypoint, { args: ['-V'], shorts: true });
+		st.equal(version.values.version, true, '`-V` sets version');
+		st.deepEqual(version.errors, [], 'no errors');
+	});
+
+	t.test('`-v` and `-V` coexist', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-v', '1.2.3', '-V'],
+			shorts: true,
+			options: { 'latest-version': { type: 'string', short: 'v' } },
+		});
+		st.equal(result.values['latest-version'], '1.2.3', 'the lowercase short is the user option');
+		st.equal(result.values.version, true, 'the uppercase short is the built-in version');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('`shorts: true` yields to an option that claims the letter', async (st) => {
+		const config = {
+			args: ['-h', 'HOST'],
+			shorts: /** @type {true} */ (true),
+			options: { host: { type: /** @type {'string'} */ ('string'), short: 'h' } },
+		};
+		const result = await pargs(entrypoint, config);
+		st.equal(result.values.host, 'HOST', '`-h` still belongs to the option');
+		st.deepEqual(result.errors, [], 'no errors');
+
+		const help = generateHelp('cli', config);
+		st.doesNotMatch(help, /-h, --help/, 'the generated help does not claim `-h` either');
+		st.match(help, /-h, --host/, 'the option keeps `-h` in the help');
+	});
+
+	t.test('`generateHelp` renders the reserved shorts', (st) => {
+		const help = generateHelp('cli', { shorts: true, options: { verbose: { type: 'boolean' } } });
+		st.match(help, /-h, --help/, '`-h` is shown on the help row');
+		st.match(help, /-V, --version/, '`-V` is shown on the version row');
+		st.end();
+	});
+
+	t.test('a routed `defaultCommand` keeps its own letter, and the usage still renders', async (st) => {
+		// the root asked for `-h` and the subcommand claims it for `--host`; the two
+		// were not written in one place, so the collision yields rather than throwing -
+		// and it has to yield at render time too, not only while parsing
+		const config = {
+			shorts: { help: /** @type {'h'} */ ('h') },
+			defaultCommand: 'run',
+			subcommands: { run: { options: { host: { type: /** @type {'string'} */ ('string'), short: 'h' } } } },
+		};
+
+		const result = await pargs(entrypoint, { ...config, args: ['--help'] });
+		st.deepEqual(result.errors, [], 'the config parses');
+
+		st.doesNotThrow(
+			() => generateHelp('cli', config),
+			'rendering the usage does not throw',
+		);
+		st.doesNotMatch(generateHelp('cli', config), /-h, --help/, 'the usage does not claim `-h` for help');
+	});
+
+	t.test('an explicitly `undefined` request is absent, not invalid', async (st) => {
+		// spreading an optional field must not be a startup error - the same rule
+		// `version` and the option configs already follow
+		const config = { shorts: { help: undefined, version: undefined } };
+		const result = await pargs(entrypoint, { ...config, args: [] });
+		st.deepEqual(result.errors, [], 'the config is accepted');
+
+		const help = generateHelp('cli', config);
+		st.doesNotMatch(help, /-h, --help/, 'and no short is registered for help');
+		st.doesNotMatch(help, /-V, --version/, 'nor for version');
+	});
+
+	t.test('an explicitly requested letter that collides throws', async (st) => {
+		await rejects(
+			st,
+			{ shorts: { help: 'h' }, options: { host: { type: 'string', short: 'h' } } },
+			/already uses/,
+			'an explicit collision is a config error',
+		);
+	});
+
+	t.test('`shorts: false` and an absent `shorts` register nothing', async (st) => {
+		const off = await pargs(entrypoint, { args: ['-h'], shorts: false });
+		st.equal(off.errors.length, 1, '`-h` is unknown with `shorts: false`');
+
+		const absent = await pargs(entrypoint, { args: ['-h'] });
+		st.equal(absent.errors.length, 1, '`-h` is unknown by default');
+	});
+
+	t.test('`version: false` skips `-V` under `shorts: true`', async (st) => {
+		const result = await pargs(entrypoint, { args: ['-h'], shorts: true, version: false });
+		st.equal(result.values.help, true, '`-h` still registers');
+
+		const missing = await pargs(entrypoint, { args: ['-V'], shorts: true, version: false });
+		st.equal(missing.errors.length, 1, '`-V` is not registered');
+	});
+
+	t.test('invalid configurations throw', async (st) => {
+		await rejects(st, { shorts: [] }, /must be a boolean, or an object/, 'an array is rejected');
+		await rejects(st, { shorts: 'h' }, /must be a boolean, or an object/, 'a string is rejected');
+		await rejects(st, { shorts: { nope: 'n' } }, /may only contain/, 'an unknown key is rejected');
+		await rejects(st, { shorts: { help: 'hh' } }, /single character/, 'a multi-character letter is rejected');
+		await rejects(st, { shorts: { help: '\u{1F600}' } }, /single character/, 'an astral character is rejected');
+		await rejects(st, { shorts: { help: 'x', version: 'x' } }, /both request/, 'two shorts on one letter is rejected');
+		await rejects(
+			st,
+			{ shorts: { version: 'V' }, options: { version: { type: 'boolean' } } },
+			/no built-in `--version`/,
+			'`shorts.version` with a user-declared version option is rejected',
+		);
+		await rejects(
+			st,
+			{ shorts: { version: 'V' }, version: false },
+			/no built-in `--version`/,
+			'`shorts.version` with `version: false` is rejected',
+		);
+	});
+
+	t.test('subcommands inherit `shorts`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['build', '-h'],
+			shorts: true,
+			subcommands: { build: { options: { verbose: { type: 'boolean' } } } },
+		});
+		st.equal(result.command.values.help, true, 'the subcommand registers `-h` too');
+		st.deepEqual(result.command.errors, [], 'no errors');
+	});
+
+	t.test('a subcommand can override the inherited `shorts`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['build', '-h'],
+			shorts: true,
+			subcommands: { build: { shorts: false } },
+		});
+		st.equal(result.command.errors.length, 1, '`-h` is unknown in the subcommand');
+	});
+
+	t.test('an inherited explicit letter yields rather than throwing', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['build', '-h', 'HOST'],
+			shorts: { help: 'h' },
+			subcommands: { build: { options: { host: { type: 'string', short: 'h' } } } },
+		});
+		st.equal(result.command.values.host, 'HOST', 'the subcommand option keeps the letter');
+		st.deepEqual(result.command.errors, [], 'the inherited request is skipped, not an error');
+	});
+
+	t.test('a routed `defaultCommand` inherits `shorts`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-h'],
+			shorts: true,
+			defaultCommand: 'build',
+			subcommands: { build: { options: { verbose: { type: 'boolean' } } } },
+		});
+		st.equal(result.command.values.help, true, 'the default command registers `-h`');
+	});
+
+	t.test('an inherited explicit `shorts.version` yields where there is no built-in `--version`', async (st) => {
+		const optedOut = await pargs(entrypoint, {
+			args: ['run'],
+			shorts: { version: 'V' },
+			subcommands: { run: { version: false } },
+		});
+		st.deepEqual(optedOut.command.errors, [], 'a subcommand with `version: false` does not throw');
+
+		const ownOption = await pargs(entrypoint, {
+			args: ['run'],
+			shorts: { version: 'V' },
+			subcommands: { run: { options: { version: { type: 'boolean' } } } },
+		});
+		st.deepEqual(ownOption.command.errors, [], 'nor does one that declares its own `version` option');
+	});
+
+	t.test('a subcommand`s own explicit `shorts` still throws on its own collision', async (st) => {
+		// the root mentioning `shorts` must not silence a collision the subcommand
+		// wrote in one place
+		try {
+			await pargs(entrypoint, {
+				args: ['run'],
+				shorts: true,
+				subcommands: {
+					run: {
+						shorts: { help: 'h' },
+						options: { host: { type: 'string', short: 'h' } },
+					},
+				},
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.match(/** @type {Error} */ (e).message, /already uses/, 'the collision is reported');
+		}
+	});
+
+	t.test('the root usage does not advertise a short the `defaultCommand` owns', (st) => {
+		const config = {
+			shorts: /** @type {true} */ (true),
+			defaultCommand: 'build',
+			subcommands: {
+				build: { options: { host: { type: /** @type {'string'} */ ('string'), short: 'h' } } },
+			},
+		};
+		const help = generateHelp('cli', config);
+		st.doesNotMatch(help, /-h, --help/, '`-h` is not claimed for `--help`');
+		st.match(help, /--help/, 'the long form is still listed');
+		st.end();
+	});
+
+	t.test('`-h` really does reach the `defaultCommand`s option', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-h', 'example.com'],
+			shorts: true,
+			defaultCommand: 'build',
+			subcommands: {
+				build: { options: { host: { type: 'string', short: 'h' } } },
+			},
+		});
+		st.equal(result.command.values.host, 'example.com', 'the option keeps the letter');
+		st.equal(result.command.values.help, false, '`--help` was not triggered');
+	});
+});
+
 test('getVersion - empty string when no package.json provides a version', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));

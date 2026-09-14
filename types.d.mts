@@ -23,6 +23,12 @@ type IntegerOptionConfig = Omit<ParseArgsOptionConfig, 'type' | 'default'> & {
 
 export type NegationPolicy = 'exclusive' | 'last-wins';
 
+/** @deprecated a migration aid; see {@link PargsConfig.shorts} */
+export type ShortsConfig = boolean | {
+	help?: string;
+	version?: string;
+};
+
 export type PargsOptionConfig = (ParseArgsOptionConfig | EnumOptionConfig | NumberOptionConfig | IntegerOptionConfig) & {
 	description?: string;
 	placeholder?: string;
@@ -74,6 +80,14 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 	 * the `v`-prefixed version from the nearest `package.json`.
 	 */
 	version?: boolean | string;
+	/**
+	 * Register short flags for the reserved `--help`/`--version`.
+	 *
+	 * @deprecated a migration aid, so an existing CLI can keep the `-h`/`-V`
+	 * short flags it already ships. New code should use the long forms, which
+	 * are always available.
+	 */
+	shorts?: ShortsConfig;
 };
 
 export type PargsRootConfig = PargsConfig;

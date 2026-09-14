@@ -1,3 +1,5 @@
+import resolveShorts, { kInheritedShorts } from './resolveShorts.mjs';
+
 const {
 	entries,
 	keys,
@@ -114,15 +116,30 @@ export default function generateHelp(name, config) {
 			`${value.description || ''}${formatDefault(value)}`.trim(),
 		]);
 	});
+	// a routed `defaultCommand` parses this level's argv, so its own options claim
+	// short letters here too; the usage must not advertise one it owns
+	const routed = config.defaultCommand
+		&& config.subcommands
+		&& config.subcommands[config.defaultCommand];
+	// the merged set is two separately-authored option tables, so a letter the
+	// routed command claims is the "not written in one place" case: yield to it
+	// rather than failing, exactly as the parse of that subcommand already does
+	const { help, version } = resolveShorts(routed
+		? {
+			...config,
+			options: { ...config.options, ...routed.options },
+			[kInheritedShorts]: true,
+		}
+		: config);
 	optionRows[optionRows.length] = [
 		'Options',
-		'    --help',
+		`${help ? `-${help}, ` : '    '}--help`,
 		'Show this help text',
 	];
 	if (!(options && 'version' in options) && config.version !== false) {
 		optionRows[optionRows.length] = [
 			'Options',
-			'    --version',
+			`${version ? `-${version}, ` : '    '}--version`,
 			'Show the version number',
 		];
 	}

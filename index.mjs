@@ -4,6 +4,7 @@ import { realpathSync } from 'fs';
 import isParseArgsError from './isParseArgsError.mjs';
 import maybeStripColors from './maybeStripColors.mjs';
 import getHelpText, { getVersion } from './getHelpText.mjs';
+import resolveShorts, { kInheritedShorts } from './resolveShorts.mjs';
 
 const {
 	hasOwn,
@@ -162,11 +163,14 @@ export default async function pargs(entrypointPath, obj) {
 	}
 	const hasBuiltinVersion = !hasUserVersion && versionConfig !== false;
 
-	// the `version` policy is inherited by subcommands: a CLI that says it has no
-	// built-in `--version`, or that prints its own string, must mean that at every
-	// level. A subcommand may declare its own to override it.
+	const shorts = resolveShorts(obj);
+
+	// the `version` and reserved-option policies are inherited by subcommands: a
+	// CLI that says it has no built-in `--version`, or that prints its own string,
+	// must mean that at every level. A subcommand may declare its own to override.
 	const inherited = {
 		...typeof obj.version !== 'undefined' && { version: obj.version },
+		...hasOwn(obj, 'shorts') && { shorts: obj.shorts },
 	};
 
 	const partial = !!passedConfig.partialValues;
@@ -210,6 +214,7 @@ export default async function pargs(entrypointPath, obj) {
 			{
 				default: false,
 				type: 'boolean',
+				...shorts.help && { short: shorts.help },
 			},
 		],
 	]).concat(hasBuiltinVersion ? [
@@ -218,6 +223,7 @@ export default async function pargs(entrypointPath, obj) {
 			{
 				default: false,
 				type: 'boolean',
+				...shorts.version && { short: shorts.version },
 			},
 		],
 	] : []));
@@ -343,6 +349,11 @@ export default async function pargs(entrypointPath, obj) {
 					// only mark it inherited when the subcommand did not write its own - a
 					// clash it declared itself is still an error
 					[kInheritedVersion]: hasOwn(inherited, 'version') && !hasOwn(subcommands[commandName], 'version'),
+					// only mark the request as inherited when the subcommand did not
+					// write its own - a collision it declared itself is still an error
+					...hasOwn(inherited, 'shorts')
+						&& !hasOwn(subcommands[commandName], 'shorts')
+						&& { [kInheritedShorts]: true },
 				};
 				command = await pargs(entrypointPath, commandConfig);
 			} else {
