@@ -136,7 +136,11 @@ export type PargsParsed<T extends (PargsConfig | PargsRootConfig)> = (
 ) & {
 	errors: string[],
 	help(): Promise<void>,
-	values: ValuesFromOptions<T['options']>,
+	// under `partialValues`, the error path returns only what survived the loose
+	// reparse, which can omit even an option that declared a `default`
+	values: T extends { partialValues: true }
+		? Partial<ValuesFromOptions<T['options']>>
+		: ValuesFromOptions<T['options']>,
 	positionals: string[],
 } & (
 	T extends { tokens: true } ? { tokens: Token[] } : {}
