@@ -63,12 +63,11 @@ export type PargsConfig = Omit<ParseArgsConfig, 'strict' | 'allowPositionals' | 
 	description?: string | StructuredDescription;
 	negation?: NegationPolicy;
 	partialValues?: boolean;
+	subcommands?: Readonly<Record<string, PargsConfig>>;
+	defaultCommand?: string;
 };
 
-export type PargsRootConfig = PargsConfig & {
-	subcommands?: Readonly<Record<string, PargsConfig>>
-	defaultCommand?: string
-};
+export type PargsRootConfig = PargsConfig;
 
 export type ParseArgsError = NodeJS.ErrnoException & {
 	code:
@@ -125,13 +124,7 @@ type ValuesFromOptions<Options extends Record<string, PargsOptionConfig> | undef
 
 // Build the command result type from subcommands config
 type SubcommandParsed<S extends Record<string, PargsConfig>> = {
-	[K in keyof S]: {
-		name: K;
-		errors: string[];
-		help(): Promise<void>;
-		values: ValuesFromOptions<S[K]['options']>;
-		positionals: string[];
-	}
+	[K in keyof S]: { name: K } & PargsParsed<S[K]>
 }[keyof S];
 
 export type PargsParsed<T extends (PargsConfig | PargsRootConfig)> = (

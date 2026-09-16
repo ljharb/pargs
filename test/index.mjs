@@ -1406,9 +1406,17 @@ test('pargs - `args`', async (t) => {
 	};
 
 	t.test('`args` routes through nested subcommands', async (st) => {
-		const result = await parseNested({
+		// written inline and uncast, so the reads below are a compile-time check
+		// that a nested config is expressible and its result typed all the way down
+		const result = await pargs(entrypoint, {
 			args: ['remote', 'add', '--url', 'U'],
-			subcommands: nested,
+			subcommands: {
+				remote: {
+					subcommands: {
+						add: { options: { url: { type: 'string' } } },
+					},
+				},
+			},
 		});
 		st.equal(result.command.name, 'remote', 'the outer subcommand is selected');
 		st.equal(result.command.command.name, 'add', 'the inner subcommand is selected');
