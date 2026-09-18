@@ -3,8 +3,12 @@
 	"version": "1.5.0",
 	"description": "A useful wrapper for `util.parseArgs`",
 	"main": "./index.mjs",
+	"types": "./types.d.mts",
 	"exports": {
-		".": "./index.mjs",
+		".": {
+			"types": "./types.d.mts",
+			"default": "./index.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"scripts": {

@@ -600,7 +600,7 @@ test('pargs - defaultCommand: root --help and --version apply at the root', asyn
 		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '2.3.4' })),
 	]);
 
-	const config = /** @type {import('../index.d.mts').PargsRootConfig} */ ({
+	const config = /** @type {import('../types.d.mts').PargsRootConfig} */ ({
 		defaultCommand: 'run',
 		subcommands: {
 			run: {

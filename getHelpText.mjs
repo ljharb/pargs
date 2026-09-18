@@ -3,7 +3,7 @@ import { readFile, realpath } from 'fs/promises';
 
 import generateHelp from './generateHelp.mjs';
 
-/** @import { PargsRootConfig } from './index.d.mts' */
+/** @import { PargsRootConfig } from './types.d.mts' */
 
 const { entries } = Object;
 

@@ -5,7 +5,7 @@ const {
 
 const { isArray } = Array;
 
-/** @import { PargsRootConfig, PargsOptionConfig, PositionalConfig, StructuredDescription } from './index.d.mts' */
+/** @import { PargsRootConfig, PargsOptionConfig, PositionalConfig, StructuredDescription } from './types.d.mts' */
 
 /** @type {(value: PargsOptionConfig) => string} */
 function valuePlaceholder(value) {

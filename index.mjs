@@ -24,7 +24,7 @@ const {
  *   PargsConfig,
  *   PargsParsed,
  *   ParseArgsConfig,
- * } from './index.d.mts'
+ * } from './types.d.mts'
  */
 
 // a recursive call uses this to tell a subcommand whether the `process.argv`
@@ -41,7 +41,8 @@ function partialValues(schema, looseValues) {
 		if (!hasOwn(normalized, key)) {
 			return [];
 		}
-		const list = [].concat(/** @type {never} */ (value));
+		/** @type {unknown[]} */
+		const list = /** @type {unknown[]} */ ([]).concat(value);
 		const { multiple } = normalized[key];
 		// `normalizedOptions` has already rewritten `enum`/`number`/`integer` to
 		// `'string'`, so the declared type comes off the original config - except
@@ -65,7 +66,7 @@ function partialValues(schema, looseValues) {
 	}));
 }
 
-/** @type {import('./index.d.mts').default} */
+/** @type {typeof import('./types.d.mts').default} */
 export default async function pargs(entrypointPath, obj) {
 	const realEntrypointPath = realpathSync(entrypointPath);
 
@@ -80,7 +81,7 @@ export default async function pargs(entrypointPath, obj) {
 
 	// an explicit `args` is already the caller's argument list: there is no node
 	// binary or entrypoint prefix to strip, so it is used verbatim.
-	const argv = hasArgs ? from(obj.args, String) : process.argv.flatMap((arg) => {
+	const argv = hasArgs ? from(/** @type {readonly string[]} */ (obj.args), String) : process.argv.flatMap((arg) => {
 		try {
 			const realpathedArg = realpathSync(arg);
 			if (
@@ -111,7 +112,7 @@ export default async function pargs(entrypointPath, obj) {
 		throw new TypeError('Error: `negation` must be either "exclusive" or "last-wins"');
 	}
 
-	if ('subcommands' in obj && keys(obj.subcommands).length === 0) {
+	if ('subcommands' in obj && keys(/** @type {object} */ (obj.subcommands)).length === 0) {
 		throw new TypeError('Error: `subcommands` must be an object with at least one key');
 	}
 
@@ -127,7 +128,7 @@ export default async function pargs(entrypointPath, obj) {
 		if (!subcommands) {
 			throw new TypeError('Error: `defaultCommand` is not allowed unless `subcommands` is defined');
 		}
-		if (!hasOwn(subcommands, defaultCommand)) {
+		if (!hasOwn(subcommands, /** @type {string} */ (defaultCommand))) {
 			throw new TypeError('Error: `defaultCommand` must be a key of `subcommands`');
 		}
 	}
@@ -144,17 +145,21 @@ export default async function pargs(entrypointPath, obj) {
 
 	const partial = !!passedConfig.partialValues;
 
+	/** @type {Record<string, { choices: readonly string[] }>} */
+	// @ts-expect-error __proto__
 	const enums = { __proto__: null };
+	/** @type {Record<string, 'number' | 'integer'>} */
+	// @ts-expect-error __proto__
 	const numbers = { __proto__: null };
 
-	/** @type {{ options: ParseArgsConfig['options'] & { help: { default: false, type: 'boolean' } } }} */
+	/** @type {NonNullable<ParseArgsConfig['options']> & { help: { default: false, type: 'boolean' } }} */
 	const normalizedOptions = fromEntries(entries(passedConfig.options ?? {}).flatMap(([key, value]) => {
 		if (typeof value.negation !== 'undefined' && value.negation !== 'exclusive' && value.negation !== 'last-wins') {
 			throw new TypeError(`Error: \`negation\` must be either "exclusive" or "last-wins"; \`${key}\` is invalid`);
 		}
 
 		if (value.type === 'enum') {
-			if (!isArray(value.choices) || !value.choices.every((x) => typeof x === 'string')) {
+			if (!isArray(value.choices) || !value.choices.every((/** @type {unknown} */ x) => typeof x === 'string')) {
 				throw new TypeError(`Error: enum choices must be an array of strings; \`${key}\` is invalid`);
 			}
 
@@ -164,9 +169,9 @@ export default async function pargs(entrypointPath, obj) {
 
 		if (value.type === 'number' || value.type === 'integer') {
 			numbers[key] = value.type;
-			var converted = { ...value, type: 'string' }; // eslint-disable-line no-var
+			const converted = { ...value, type: 'string' };
 			if ('default' in converted) {
-				var def = [].concat(converted.default).map(String); // eslint-disable-line no-var
+				const def = [].concat(converted.default).map(String);
 				converted.default = converted.multiple ? def : def[0];
 			}
 			return [[key, converted]];
@@ -210,18 +215,25 @@ export default async function pargs(entrypointPath, obj) {
 			if (typeof value === 'undefined') {
 				return;
 			}
-			if (![].concat(value).every((v) => config.choices.includes(v))) {
+			// a value that is not a declared choice is simply not a member, so widening
+			// what `includes` accepts answers that directly - where a `typeof` guard
+			// would add an arm nothing ever reaches
+			/** @type {{ choices: readonly (string | boolean)[] }} */
+			const { choices } = config;
+			if (!(/** @type {(string | boolean)[]} */ ([]).concat(value).every((v) => choices.includes(v)))) {
 				errors[errors.length] = `Error: Invalid value for option "${key}"`;
 			}
 		});
 
+		/** @type {Record<string, string | number | boolean | (string | number | boolean)[] | undefined>} */
+		const coerced = results.values;
 		entries(numbers).forEach(([key, type]) => {
 			const value = results.values[key];
 			if (typeof value === 'undefined') {
 				return;
 			}
-			var allValid = true; // eslint-disable-line no-var
-			const nums = [].concat(value).map((v) => {
+			let allValid = true;
+			const nums = /** @type {unknown[]} */ ([]).concat(value).map((v) => {
 				const num = Number(v);
 				if (!Number.isFinite(num) || (type === 'integer' && !Number.isInteger(num))) {
 					allValid = false;
@@ -231,7 +243,7 @@ export default async function pargs(entrypointPath, obj) {
 			if (!allValid) {
 				errors[errors.length] = `Error: Invalid ${type} value for option "${key}"`;
 			}
-			results.values[key] = isArray(value) ? nums : nums[0];
+			coerced[key] = isArray(value) ? nums : nums[0];
 		});
 
 		const { allowPositionals, minPositionals } = passedConfig;
@@ -276,11 +288,13 @@ export default async function pargs(entrypointPath, obj) {
 
 		/** @type {undefined | PargsParsed<PargsConfig>} */
 		let command;
-		/** @type {string | undefined} */
+		/** @type {undefined | string} */
 		let commandName;
 		// the top level owns the `process.argv` splice, and only when it is the
 		// thing being parsed; a nested call inherits the answer from its parent.
-		const mayMutateArgv = hasOwn(obj, kMutateArgv) ? obj[kMutateArgv] : !hasArgs;
+		const mayMutateArgv = hasOwn(obj, kMutateArgv)
+			? /** @type {Record<symbol, boolean>} */ (obj)[kMutateArgv]
+			: !hasArgs;
 		if (subcommands) {
 			if (knownSubcommand) {
 				([commandName] = argv);
@@ -331,6 +345,7 @@ export default async function pargs(entrypointPath, obj) {
 			}
 		}
 
+		// @ts-expect-error TODO: figure out how to make this work
 		return {
 			help,
 			errors,
@@ -356,6 +371,7 @@ export default async function pargs(entrypointPath, obj) {
 				strict: false,
 				allowPositionals: true,
 			});
+			// @ts-expect-error TODO: figure out how to make this work
 			return {
 				async help() {
 					const helpText = maybeStripColors(await getHelpText(realEntrypointPath, obj));
