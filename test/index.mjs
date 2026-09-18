@@ -60,14 +60,14 @@ test('pargs - a user-defined version option is preferred over the built-in', asy
 		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '9.9.9' })),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--version'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--version'] });
 	const result = await pargs(entrypoint, {
 		options: { version: { type: 'boolean' } },
 	});
 	t.ok(result.values.version, 'the user-defined version option still parses');
 
-	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+	const logCapture = t.capture(console, 'log');
+	t.capture(process, 'exit', () => {
 		throw new Error('EXIT');
 	});
 
@@ -95,15 +95,15 @@ test('pargs - version flag', async (t) => {
 		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '4.5.6' })),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--version'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--version'] });
 	const result = await pargs(entrypoint, {
 		options: { verbose: { type: 'boolean' } },
 	});
 
 	t.ok(result.values.version, '--version flag is set');
 
-	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+	const logCapture = t.capture(console, 'log');
+	t.capture(process, 'exit', () => {
 		throw new Error('EXIT');
 	});
 
@@ -208,7 +208,7 @@ test('pargs - minPositionals and subcommands are mutually exclusive', async (t) 
 });
 
 test('pargs - enum choices validation', async (t) => {
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, filename] });
+	t.intercept(process, 'argv', { value: [process.execPath, filename] });
 
 	try {
 		await pargs(filename, {
@@ -269,7 +269,7 @@ test('pargs - boolean option mutual exclusivity', async (t) => {
 	]);
 
 	t.test('--verbose and --no-verbose are mutually exclusive', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose', '--no-verbose'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--verbose', '--no-verbose'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				verbose: { type: 'boolean' },
@@ -283,7 +283,7 @@ test('pargs - boolean option mutual exclusivity', async (t) => {
 	});
 
 	t.test('--help and --no-help are mutually exclusive', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help', '--no-help'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help', '--no-help'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				debug: { type: 'boolean' },
@@ -293,7 +293,7 @@ test('pargs - boolean option mutual exclusivity', async (t) => {
 	});
 
 	t.test('--no-flag works correctly', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--no-verbose'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--no-verbose'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				verbose: { type: 'boolean', default: true },
@@ -401,7 +401,8 @@ test('pargs - `negation`', async (t) => {
 
 	t.test('an invalid root value throws', async (st) => {
 		try {
-			await pargs(entrypoint, { negation: /** @type {never} */ ('nope') });
+			// @ts-expect-error
+			await pargs(entrypoint, { negation: 'nope' });
 			st.fail('should have thrown');
 		} catch (e) {
 			st.ok(e instanceof TypeError, 'throws a TypeError');
@@ -412,7 +413,8 @@ test('pargs - `negation`', async (t) => {
 	t.test('an invalid per-option value throws', async (st) => {
 		try {
 			await pargs(entrypoint, {
-				options: { verbose: { type: 'boolean', negation: /** @type {never} */ ('nope') } },
+				// @ts-expect-error
+				options: { verbose: { type: 'boolean', negation: 'nope' } },
 			});
 			st.fail('should have thrown');
 		} catch (e) {
@@ -435,7 +437,7 @@ test('pargs - unknown options detection', async (t) => {
 	]);
 
 	t.test('unknown option on root', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--unknown'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--unknown'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				known: { type: 'boolean' },
@@ -449,7 +451,7 @@ test('pargs - unknown options detection', async (t) => {
 	});
 
 	t.test('multiple unknown options', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--foo', '--bar'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--foo', '--bar'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				known: { type: 'boolean' },
@@ -472,7 +474,7 @@ test('pargs - subcommands functionality', async (t) => {
 	]);
 
 	t.test('valid subcommand', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', '--verbose'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build', '--verbose'] });
 		const result = await pargs(entrypoint, {
 			subcommands: {
 				build: {
@@ -488,7 +490,7 @@ test('pargs - subcommands functionality', async (t) => {
 	});
 
 	t.test('unknown subcommand', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'unknown'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'unknown'] });
 		const result = await pargs(entrypoint, {
 			subcommands: {
 				build: {},
@@ -502,7 +504,7 @@ test('pargs - subcommands functionality', async (t) => {
 	});
 
 	t.test('unknown option in subcommand', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', '--unknown'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build', '--unknown'] });
 		const result = await pargs(entrypoint, {
 			subcommands: {
 				build: {
@@ -529,7 +531,7 @@ test('pargs - default subcommand', async (t) => {
 	]);
 
 	t.test('routes a non-subcommand positional to the default command', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'some-input', '--json'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'some-input', '--json'] });
 		const result = await pargs(entrypoint, {
 			defaultCommand: 'run',
 			subcommands: {
@@ -546,7 +548,7 @@ test('pargs - default subcommand', async (t) => {
 	});
 
 	t.test('routes a flag-first invocation to the default command', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--json'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--json'] });
 		const result = await pargs(entrypoint, {
 			defaultCommand: 'run',
 			subcommands: {
@@ -559,7 +561,7 @@ test('pargs - default subcommand', async (t) => {
 	});
 
 	t.test('routes a bare invocation (no args) to the default command', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			defaultCommand: 'run',
 			subcommands: {
@@ -572,7 +574,7 @@ test('pargs - default subcommand', async (t) => {
 	});
 
 	t.test('a known subcommand takes precedence over the default command', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'other', '--verbose'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'other', '--verbose'] });
 		const result = await pargs(entrypoint, {
 			defaultCommand: 'run',
 			subcommands: {
@@ -610,11 +612,11 @@ test('pargs - defaultCommand: root --help and --version apply at the root', asyn
 	});
 
 	t.test('root --help shows the command list, not the default command help', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
 		const result = await pargs(entrypoint, config);
 
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -631,11 +633,11 @@ test('pargs - defaultCommand: root --help and --version apply at the root', asyn
 	});
 
 	t.test('root --version prints the version', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--version'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--version'] });
 		const result = await pargs(entrypoint, config);
 
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -688,7 +690,7 @@ test('pargs - allowPositionals functionality', async (t) => {
 	]);
 
 	t.test('allowPositionals as boolean (true)', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: true,
 		});
@@ -697,7 +699,7 @@ test('pargs - allowPositionals functionality', async (t) => {
 	});
 
 	t.test('allowPositionals as number', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: 2,
 		});
@@ -706,7 +708,7 @@ test('pargs - allowPositionals functionality', async (t) => {
 	});
 
 	t.test('too many positionals', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: 2,
 		});
@@ -718,7 +720,7 @@ test('pargs - allowPositionals functionality', async (t) => {
 	});
 
 	t.test('allowPositionals in subcommand', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js'] });
 		const result = await pargs(entrypoint, {
 			subcommands: {
 				build: {
@@ -743,7 +745,7 @@ test('pargs - minPositionals functionality', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 	t.test('not enough positionals', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'file1.js'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: true,
 			minPositionals: 2,
@@ -756,7 +758,7 @@ test('pargs - minPositionals functionality', async (t) => {
 	});
 
 	t.test('too many positionals', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js', 'file3.js'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: 2,
 			minPositionals: 1,
@@ -769,7 +771,7 @@ test('pargs - minPositionals functionality', async (t) => {
 	});
 
 	t.test('min number of positionals', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'file1.js', 'file2.js'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: true,
 			minPositionals: 2,
@@ -779,7 +781,7 @@ test('pargs - minPositionals functionality', async (t) => {
 	});
 
 	t.test('minPositionals in subcommand', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js'] });
 		const notEnoughResult = await pargs(entrypoint, {
 			subcommands: {
 				build: {
@@ -794,7 +796,7 @@ test('pargs - minPositionals functionality', async (t) => {
 			'error mentions minimum requirement in subcommand',
 		);
 
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js', 'file2.js', 'file3.js'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build', 'file1.js', 'file2.js', 'file3.js'] });
 		const tooManyResult = await pargs(entrypoint, {
 			subcommands: {
 				build: {
@@ -811,7 +813,7 @@ test('pargs - minPositionals functionality', async (t) => {
 	});
 
 	t.test('--help with missing required positionals does not error', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
 		const result = await pargs(entrypoint, {
 			allowPositionals: true,
 			minPositionals: 2,
@@ -834,7 +836,7 @@ test('pargs - enum validation', async (t) => {
 	]);
 
 	t.test('valid enum value', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=debug'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--level=debug'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -848,7 +850,7 @@ test('pargs - enum validation', async (t) => {
 	});
 
 	t.test('invalid enum value', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=invalid'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--level=invalid'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -865,7 +867,7 @@ test('pargs - enum validation', async (t) => {
 	});
 
 	t.test('enum with default', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -889,7 +891,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	await writeFile(entrypoint, '// test file');
 
 	t.test('unprovided enum with no default', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -903,7 +905,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	});
 
 	t.test('unprovided `multiple` enum with no default', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -918,7 +920,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	});
 
 	t.test('`multiple` enum with all valid values', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=debug', '--level=info'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--level=debug', '--level=info'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -933,7 +935,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	});
 
 	t.test('`multiple` enum with one invalid value', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=debug', '--level=nope'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--level=debug', '--level=nope'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -947,7 +949,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	});
 
 	t.test('`multiple` enum with a default', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -963,7 +965,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	});
 
 	t.test('`multiple` enum with an empty default', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -979,7 +981,7 @@ test('pargs - enum validation only applies to provided values', async (t) => {
 	});
 
 	t.test('a default outside `choices` still errors', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -1006,7 +1008,7 @@ test('pargs - number type validation', async (t) => {
 	]);
 
 	t.test('valid number value', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=8080'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--port=8080'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number' },
@@ -1018,7 +1020,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('valid negative number', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--offset=-3.5'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--offset=-3.5'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				offset: { type: 'number' },
@@ -1029,7 +1031,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('invalid number value', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=abc'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--port=abc'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number' },
@@ -1043,7 +1045,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('Infinity is not a valid number', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=Infinity'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--port=Infinity'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number' },
@@ -1057,7 +1059,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('number with default (not provided)', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number', default: 3e3 },
@@ -1068,7 +1070,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('number with numeric default (not provided)', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number', default: 3e3 },
@@ -1079,7 +1081,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('number with multiple and numeric defaults (not provided)', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number', multiple: true, default: [80, 443] },
@@ -1090,7 +1092,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('number not provided without default', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number' },
@@ -1101,7 +1103,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('number with multiple', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=80', '--port=443'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--port=80', '--port=443'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number', multiple: true },
@@ -1112,7 +1114,7 @@ test('pargs - number type validation', async (t) => {
 	});
 
 	t.test('number with multiple, one invalid', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--port=80', '--port=abc'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--port=80', '--port=abc'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				port: { type: 'number', multiple: true },
@@ -1135,7 +1137,7 @@ test('pargs - integer type validation', async (t) => {
 	]);
 
 	t.test('valid integer value', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=42'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--count=42'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				count: { type: 'integer' },
@@ -1147,7 +1149,7 @@ test('pargs - integer type validation', async (t) => {
 	});
 
 	t.test('float is not a valid integer', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=3.14'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--count=3.14'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				count: { type: 'integer' },
@@ -1161,7 +1163,7 @@ test('pargs - integer type validation', async (t) => {
 	});
 
 	t.test('non-numeric string is not a valid integer', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=abc'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--count=abc'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				count: { type: 'integer' },
@@ -1175,7 +1177,7 @@ test('pargs - integer type validation', async (t) => {
 	});
 
 	t.test('negative integer is valid', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--count=-5'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--count=-5'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				count: { type: 'integer' },
@@ -1186,7 +1188,7 @@ test('pargs - integer type validation', async (t) => {
 	});
 
 	t.test('integer with multiple', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--id=1', '--id=2', '--id=3'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--id=1', '--id=2', '--id=3'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				id: { type: 'integer', multiple: true },
@@ -1197,7 +1199,7 @@ test('pargs - integer type validation', async (t) => {
 	});
 
 	t.test('integer with multiple, one float', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--id=1', '--id=2.5'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--id=1', '--id=2.5'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				id: { type: 'integer', multiple: true },
@@ -1220,7 +1222,7 @@ test('pargs - help functionality', async (t) => {
 	]);
 
 	t.test('--help flag', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				verbose: { type: 'boolean' },
@@ -1229,8 +1231,8 @@ test('pargs - help functionality', async (t) => {
 
 		st.equal(typeof result.help, 'function', 'result has help function');
 
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		const exitCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		const exitCapture = st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -1248,7 +1250,7 @@ test('pargs - help functionality', async (t) => {
 	});
 
 	t.test('help with errors', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--unknown'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--unknown'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				verbose: { type: 'boolean' },
@@ -1259,9 +1261,9 @@ test('pargs - help functionality', async (t) => {
 		st.equal(typeof result.help, 'function', 'result has help function');
 		st.notOk(result.values.help, '--help flag should not be set');
 
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		const errorCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'error');
-		const exitCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const exitCapture = st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -1300,7 +1302,7 @@ test('pargs - argv filtering', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'value'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--flag', 'value'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			flag: { type: 'string' },
@@ -1328,7 +1330,7 @@ test('pargs - `args`', async (t) => {
 	await writeFile(entrypoint, '// test file');
 
 	t.test('an explicit `args` beats `process.argv`', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
 		const result = await pargs(entrypoint, {
 			args: ['--flag', 'FROM_ARGS'],
 			options: { flag: { type: 'string' } },
@@ -1337,7 +1339,7 @@ test('pargs - `args`', async (t) => {
 	});
 
 	t.test('an empty `args` parses nothing', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
 		const result = await pargs(entrypoint, {
 			args: [],
 			options: { flag: { type: 'string' } },
@@ -1346,7 +1348,7 @@ test('pargs - `args`', async (t) => {
 	});
 
 	t.test('an explicitly `undefined` `args` falls back to `process.argv`', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--flag', 'FROM_ARGV'] });
 		const result = await pargs(entrypoint, {
 			args: undefined,
 			options: { flag: { type: 'string' } },
@@ -1364,7 +1366,7 @@ test('pargs - `args`', async (t) => {
 
 	t.test('`args` governs subcommand routing, and `process.argv` is untouched', async (st) => {
 		const argv = [process.execPath, entrypoint, 'build', '--verbose'];
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: argv });
+		st.intercept(process, 'argv', { value: argv });
 		const result = await pargs(entrypoint, {
 			args: ['test', '--watch'],
 			subcommands: {
@@ -1392,9 +1394,8 @@ test('pargs - `args`', async (t) => {
 	// nested `subcommands` work at runtime, but `PargsConfig` does not declare them
 	/** @typedef {{ command: { name: string, command: { name: string, values: { url?: string } } } }} NestedResult */
 	/** @type {(config: Record<string, unknown>) => Promise<NestedResult>} */
-	const parseNested = (config) => /** @type {Promise<NestedResult>} */ (
-		/** @type {unknown} */ (pargs(entrypoint, /** @type {never} */ (config)))
-	);
+	// @ts-expect-error nested `subcommands` are not declarable, per the note above
+	const parseNested = (config) => pargs(entrypoint, config);
 
 	const nested = {
 		remote: {
@@ -1415,7 +1416,7 @@ test('pargs - `args`', async (t) => {
 	});
 
 	t.test('nested subcommands still splice `process.argv` when no `args` is given', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'remote', 'add', '--url', 'U'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'remote', 'add', '--url', 'U'] });
 		const result = await parseNested({ subcommands: nested });
 		st.equal(result.command.command.values.url, 'U', 'the leaf still parses its own options');
 		st.deepEqual(process.argv, [process.execPath, entrypoint, '--url', 'U'], 'every subcommand name is spliced out');
@@ -1423,7 +1424,8 @@ test('pargs - `args`', async (t) => {
 
 	t.test('a non-array `args` throws', async (st) => {
 		try {
-			await pargs(entrypoint, { args: /** @type {never} */ ('nope') });
+			// @ts-expect-error
+			await pargs(entrypoint, { args: 'nope' });
 			st.fail('should have thrown');
 		} catch (e) {
 			st.ok(e instanceof TypeError, 'throws a TypeError');
@@ -1434,8 +1436,9 @@ test('pargs - `args`', async (t) => {
 	t.test('the reserved `help` check comes first', async (st) => {
 		try {
 			await pargs(entrypoint, {
-				args: /** @type {never} */ ('nope'),
-				options: { help: /** @type {never} */ ({ type: 'boolean' }) },
+				// @ts-expect-error
+				args: 'nope',
+				options: { help: { type: 'boolean' } },
 			});
 			st.fail('should have thrown');
 		} catch (e) {
@@ -1456,7 +1459,7 @@ test('pargs - boolean type validation', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose=yes'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--verbose=yes'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			verbose: { type: 'boolean' },
@@ -1483,7 +1486,7 @@ test('pargs - help() error output path coverage', async (t) => {
 	]);
 
 	t.test('help() with enum error', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--level=invalid'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--level=invalid'] });
 		const result = await pargs(entrypoint, {
 			options: {
 				level: {
@@ -1496,9 +1499,9 @@ test('pargs - help() error output path coverage', async (t) => {
 		st.ok(result.errors.length > 0, 'has errors');
 		st.notOk(result.values.help, '--help flag should be false');
 
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		const errorCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'error');
-		const exitCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const exitCapture = st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -1666,7 +1669,7 @@ test('pargs - rethrows non-ParseArgsError exceptions', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build'] });
 
 	try {
 		await pargs(entrypoint, {
@@ -1700,7 +1703,7 @@ test('pargs - no options with strict false', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--anything'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--anything'] });
 	const result = await pargs(entrypoint, {});
 
 	t.ok(result.errors.length > 0, 'has errors for unknown option with no options defined');
@@ -1722,7 +1725,7 @@ test('pargs - tokens option', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--verbose'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			verbose: { type: 'boolean' },
@@ -1746,7 +1749,7 @@ test('pargs - tokens option on error path', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose=yes'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--verbose=yes'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			verbose: { type: 'boolean' },
@@ -1771,7 +1774,7 @@ test('pargs - tokens option with unexpected positionals', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'unexpected-positional'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'unexpected-positional'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			verbose: { type: 'boolean' },
@@ -1800,7 +1803,7 @@ test('pargs - subcommand without name in argv', async (t) => {
 		writeFile(entrypoint, '// test file'),
 	]);
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 	const result = await pargs(entrypoint, {
 		subcommands: {
 			build: {},
@@ -1827,7 +1830,7 @@ test('pargs - subcommand with custom help function', async (t) => {
 	]);
 
 	t.test('subcommand help function', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, 'build', '--help'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'build', '--help'] });
 		const result = await pargs(entrypoint, {
 			subcommands: {
 				build: {
@@ -1860,7 +1863,7 @@ test('pargs - color stripping in help text', async (t) => {
 	]);
 
 	t.test('strips colors when NO_COLOR is set', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
 
 		// Manually set NO_COLOR for this test
 		const originalNoColor = process.env.NO_COLOR;
@@ -1881,8 +1884,8 @@ test('pargs - color stripping in help text', async (t) => {
 
 		st.ok(result.values.help, '--help flag is set');
 
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -1903,12 +1906,12 @@ test('pargs - color stripping in help text', async (t) => {
 	});
 
 	t.test('strips colors when stdout is not a TTY', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process.stdout)), 'isTTY', { value: false });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(process.stdout, 'isTTY', { value: false });
 
 		// Set up captures before any operations that might use them
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -1936,8 +1939,8 @@ test('pargs - color stripping in help text', async (t) => {
 	});
 
 	t.test('preserves colors when stdout is a TTY and NO_COLOR is not set', async (st) => {
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
-		st.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process.stdout)), 'isTTY', { value: true });
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
+		st.intercept(process.stdout, 'isTTY', { value: true });
 
 		// Ensure NO_COLOR is not set
 		const originalNoColor = process.env.NO_COLOR;
@@ -1949,8 +1952,8 @@ test('pargs - color stripping in help text', async (t) => {
 		});
 
 		// Set up captures before any operations that might use them
-		const logCapture = st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-		st.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+		const logCapture = st.capture(console, 'log');
+		st.capture(process, 'exit', () => {
 			throw new Error('EXIT');
 		});
 
@@ -2287,15 +2290,15 @@ test('pargs - generated help when help.txt is absent', async (t) => {
 	const entrypoint = join(testDir, 'test.mjs');
 	await writeFile(entrypoint, '// test file'); // intentionally no help.txt
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--help'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			verbose: { type: 'boolean', description: 'Enable verbose output' },
 		},
 	});
 
-	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+	const logCapture = t.capture(console, 'log');
+	t.capture(process, 'exit', () => {
 		throw new Error('EXIT');
 	});
 
@@ -2319,7 +2322,7 @@ test('pargs - generated help on error path when help.txt is absent', async (t) =
 	const entrypoint = join(testDir, 'test.mjs');
 	await writeFile(entrypoint, '// test file'); // intentionally no help.txt
 
-	t.intercept(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'argv', { value: [process.execPath, entrypoint, '--verbose=nope'] });
+	t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--verbose=nope'] });
 	const result = await pargs(entrypoint, {
 		options: {
 			verbose: { type: 'boolean' },
@@ -2328,9 +2331,9 @@ test('pargs - generated help on error path when help.txt is absent', async (t) =
 
 	t.ok(result.errors.length > 0, 'has errors from the parseArgs failure');
 
-	const logCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'log');
-	const errorCapture = t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (console)), 'error');
-	t.capture(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (process)), 'exit', () => {
+	const logCapture = t.capture(console, 'log');
+	const errorCapture = t.capture(console, 'error');
+	t.capture(process, 'exit', () => {
 		throw new Error('EXIT');
 	});
 
