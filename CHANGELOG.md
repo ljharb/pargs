@@ -5,7 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.5.0...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.5.1...v2.0.0) - 2025-10-24
+
+## [v1.5.1](https://github.com/ljharb/pargs/compare/v1.5.0...v1.5.1) - 2026-09-21
+
+### Commits
+
+- [types] drop casts the test suite does not need [`c649435`](https://github.com/ljharb/pargs/commit/c6494350cfffb08525b57ca69872048540e463a3)
+- [types] type-check `index.mjs` [`f5f1164`](https://github.com/ljharb/pargs/commit/f5f116474aa34e9ce1869097796f1959ddf2b9f1)
+- [types] allow nested `subcommands`, and give a subcommand result its `tokens` [`814d26a`](https://github.com/ljharb/pargs/commit/814d26aa3d8b09616571d5806abd3df19da6ef7a)
+- [Robustness] `npx find-primordials-cli --fix .` [`3e130db`](https://github.com/ljharb/pargs/commit/3e130db898f94076356c50aca5421433513acc4a)
+- [types] `partialValues` results are partial [`f9f6928`](https://github.com/ljharb/pargs/commit/f9f69285f6ae36c99a541d12fe9c2dc231b16198)
+- [types] inline `ParseArgsError`'s import into the predicate [`5f4177e`](https://github.com/ljharb/pargs/commit/5f4177e24f1b6a23a6e737b6d3d25a546089f90e)
+- [types] avoid casting [`a95f19f`](https://github.com/ljharb/pargs/commit/a95f19f1a6d764b17d081b395ec5bb8d02935d21)
 
 ## [v1.5.0](https://github.com/ljharb/pargs/compare/v1.4.2...v1.5.0) - 2026-09-14
 
