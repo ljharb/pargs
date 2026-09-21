@@ -5,7 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.5.1...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.6.0...v2.0.0) - 2025-10-24
+
+## [v1.6.0](https://github.com/ljharb/pargs/compare/v1.5.1...v1.6.0) - 2026-09-21
+
+### Commits
+
+- [New] add an `optionalValue` option config [`12ca6f4`](https://github.com/ljharb/pargs/commit/12ca6f491e9b1885689c3c638a42c6c95a61cdb4)
+- [New] add a `shorts` config option [`317a5af`](https://github.com/ljharb/pargs/commit/317a5affc405900bd8715559582001260b148dba)
+- [New] add a `version` config option [`160d3d7`](https://github.com/ljharb/pargs/commit/160d3d7dfa701a12262204f600939975f2131121)
+- [New] add a `greedy` option config [`5a12a79`](https://github.com/ljharb/pargs/commit/5a12a7956a826acc7ed5528e3b1413d0adfb9f47)
+- [New] add a `variadic` option config [`e03482a`](https://github.com/ljharb/pargs/commit/e03482a29e0ff86cb4fab8661875bd2504dc1e58)
+- [New] add a `usageOnError` config option [`5b88854`](https://github.com/ljharb/pargs/commit/5b8885462b3b7925c7b820f43df68b481ce0d17c)
+- [New] `help()` accepts `{ exit }` and reports which path it handled [`8ae196d`](https://github.com/ljharb/pargs/commit/8ae196dc811a2ddfacbc1fd5ef6ba12397531b47)
 
 ## [v1.5.1](https://github.com/ljharb/pargs/compare/v1.5.0...v1.5.1) - 2026-09-21
 
