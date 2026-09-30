@@ -100,6 +100,9 @@ function partialValues(schema, looseValues) {
 /** @type {typeof import('./types.d.mts').default} */
 export default async function pargs(entrypointPath, obj) {
 	const realEntrypointPath = realpathSync(entrypointPath);
+	// `process.execPath` is not always realpathed (eg, node reached through a
+	// symlink or junction), but each `arg` is compared after being realpathed
+	const realExecPath = realpathSync(process.execPath);
 
 	if ('help' in obj || (obj.options && 'help' in obj.options)) {
 		throw new TypeError('The "help" option is reserved');
@@ -116,7 +119,7 @@ export default async function pargs(entrypointPath, obj) {
 		try {
 			const realpathedArg = realpathSync(arg);
 			if (
-				realpathedArg === process.execPath
+				realpathedArg === realExecPath
 				|| realpathedArg === realEntrypointPath
 			) {
 				return [];

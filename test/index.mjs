@@ -1,6 +1,11 @@
 import test from 'tape';
 import { writeFile } from 'fs/promises';
-import { mkdirSync, realpathSync, rmSync } from 'fs';
+import {
+	mkdirSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+} from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import tmp from 'tmp';
@@ -3701,6 +3706,26 @@ test('pargs - generated help on error path when help.txt is absent', async (t) =
 
 	t.ok(logs.some((log) => log.includes('Usage: test.mjs')), 'generated help is printed on the error path');
 	t.ok(errors.length > 0, 'errors are printed to stderr');
+
+	t.end();
+});
+
+test('pargs - a node binary reached through a symlink is not a positional', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	const linkedNode = join(testDir, 'node');
+	await writeFile(entrypoint, '// test file');
+	symlinkSync(realpathSync(process.execPath), linkedNode);
+
+	t.intercept(process, 'execPath', { value: linkedNode });
+	t.intercept(process, 'argv', { value: [linkedNode, entrypoint] });
+
+	const result = await pargs(entrypoint, {});
+
+	t.deepEqual(result.errors, [], 'the symlinked node binary is stripped from the arguments');
+	t.deepEqual(result.positionals, [], 'no positionals are parsed');
 
 	t.end();
 });
