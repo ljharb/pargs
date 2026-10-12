@@ -35,8 +35,8 @@ export function scrubBareTokens(tokens) {
 		token.kind === 'option' && token.value === bareValue
 			? {
 				...token,
-				value: undefined,
-				inlineValue: undefined,
+				value: void undefined,
+				inlineValue: void undefined,
 			}
 			: token
 	));
@@ -87,7 +87,8 @@ function pushOption(state) {
 	const glue = arg[1] === '-' ? '=' : '';
 	let j;
 	if (isValueLike(next)) {
-		out.push(arg, next);
+		out[out.length] = arg;
+		out[out.length] = next;
 		j = i + 2;
 	} else if (config.greedy && typeof next === 'string' && next !== '--') {
 		out[out.length] = `${arg}${glue}${next}`;

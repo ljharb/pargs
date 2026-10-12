@@ -257,7 +257,7 @@ test('pargs - `version` config', async (t) => {
 		const realError = console.error;
 		const realExit = process.exit;
 		const realExitCode = process.exitCode;
-		console.log = (...args) => { out.push(args.join(' ')); };
+		console.log = (...args) => { out[out.length] = args.join(' '); };
 		console.error = () => {};
 		process.exit = () => {
 			throw new Error('EXIT');
@@ -620,8 +620,8 @@ test('pargs - `usageOnError`', async (t) => {
 		const realError = console.error;
 		const realExit = process.exit;
 		const realExitCode = process.exitCode;
-		console.log = (...args) => { out.push(args.join(' ')); };
-		console.error = (...args) => { err.push(args.join(' ')); };
+		console.log = (...args) => { out[out.length] = args.join(' '); };
+		console.error = (...args) => { err[err.length] = args.join(' '); };
 		process.exit = /** @type {never} */ (() => {
 			throw new Error('EXIT');
 		});

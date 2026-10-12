@@ -79,7 +79,8 @@ export default function generateHelp(name, config) {
 	const lines = [];
 
 	if (desc.summary) {
-		lines.push(`${desc.summary}`.trim(), '');
+		lines[lines.length] = `${desc.summary}`.trim();
+		lines[lines.length] = '';
 	}
 
 	const min = typeof minPositionals === 'number' ? minPositionals : 0;
@@ -88,7 +89,7 @@ export default function generateHelp(name, config) {
 	if (subcommands) {
 		usage[usage.length] = '<command>';
 	}
-	usage.push(options && keys(options).length > 0 ? '[options]' : '[--help]');
+	usage[usage.length] = options && keys(options).length > 0 ? '[options]' : '[--help]';
 	if (!subcommands && (allowPositionals || positionals?.length)) {
 		if (positionals?.length) {
 			usage.push(...usagePositionals(positionals, min));
@@ -96,16 +97,18 @@ export default function generateHelp(name, config) {
 			usage[usage.length] = min > 0 ? '<args...>' : '[args...]';
 		}
 	}
-	lines.push(usage.join(' '));
+	lines[lines.length] = usage.join(' ');
 
 	if (subcommands) {
-		lines.push('', 'Commands:');
+		lines[lines.length] = '';
+		lines[lines.length] = 'Commands:';
 		const rows = entries(subcommands).map(([command, sub]) => [command, summaryLine(sub.description)]);
 		lines.push(...alignedRows(/** @type {[string, string][]} */ (rows), '  '));
 	}
 
 	if (!subcommands && positionals?.some((pos) => pos.description)) {
-		lines.push('', 'Arguments:');
+		lines[lines.length] = '';
+		lines[lines.length] = 'Arguments:';
 		const rows = positionals.map((pos) => [pos.name, pos.description || '']);
 		lines.push(...alignedRows(/** @type {[string, string][]} */ (rows), '  '));
 	}
@@ -158,22 +161,27 @@ export default function generateHelp(name, config) {
 
 	const width = Math.max(...optionRows.map(([, flag]) => flag.length));
 	groupOrder.forEach((group) => {
-		lines.push('', `${group}:`);
-		optionRows.filter(([rowGroup]) => rowGroup === group).forEach(([
-			, flag, right,
-		]) => {
-			lines.push(`  ${right ? `${flag.padEnd(width)}  ${right}` : flag}`);
-		});
+		lines[lines.length] = '';
+		lines[lines.length] = `${group}:`;
+		optionRows
+			.filter(([rowGroup]) => rowGroup === group)
+			.forEach(([
+				, flag, right,
+			]) => {
+				lines[lines.length] = `  ${right ? `${flag.padEnd(width)}  ${right}` : flag}`;
+			});
 	});
 
 	if (desc.examples?.length) {
-		lines.push('', 'Examples:');
+		lines[lines.length] = '';
+		lines[lines.length] = 'Examples:';
 		const rows = desc.examples.map((ex) => (typeof ex === 'string' ? [ex, ''] : [ex.command, ex.description || '']));
 		lines.push(...alignedRows(/** @type {[string, string][]} */ (rows), '  '));
 	}
 
 	(desc.sections || []).forEach((section) => {
-		lines.push('', `${section.title}:`);
+		lines[lines.length] = '';
+		lines[lines.length] = `${section.title}:`;
 		`${section.body}`.split('\n').forEach((line) => lines.push(`  ${line}`.trimEnd()));
 	});
 
