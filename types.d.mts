@@ -250,10 +250,21 @@ type SubcommandParsed<S extends Record<string, PargsConfig>, Root = unknown> = {
 	>
 }[keyof S];
 
+// with root options of its own and no `defaultCommand`, a level may be invoked
+// with only those options - and then there is no command at all
+type MayOmitCommand<T> = T extends { defaultCommand: string }
+	? false
+	: T extends { options: infer O }
+		// options typed only as `any` may well have keys
+		? unknown extends O ? true : NonNullable<O> extends Record<PropertyKey, undefined> ? false : true
+		: false;
+
 export type PargsParsed<T extends (PargsConfig | PargsRootConfig)> = (
 	T extends PargsRootConfig
 		? T['subcommands'] extends infer S extends Record<string, PargsConfig>
-			? { command: SubcommandParsed<S, T> }
+			? MayOmitCommand<T> extends true
+				? { command?: SubcommandParsed<S, T> }
+				: { command: SubcommandParsed<S, T> }
 			: {}
 		: {}
 ) & {

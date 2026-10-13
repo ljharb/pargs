@@ -98,3 +98,34 @@ export default function resolveShorts(config) {
 
 	return { help: resolved.help, version: resolved.version };
 }
+
+// The short letters a routed `defaultCommand` claims at its parent's level,
+// mapped to the option each one sets: its own options', and those its reserved
+// `--help`/`--version` resolve to, given the `shorts` and `version` it inherits.
+// A config the default command could not resolve claims none of the reserved
+// letters here; routing to it reports that itself.
+/** @type {(config: ShortsInput) => Map<string, string>} */
+export function routedShorts(config) {
+	const { defaultCommand, subcommands } = config;
+	if (typeof defaultCommand !== 'string' || !subcommands || !hasOwn(subcommands, defaultCommand)) {
+		return new Map();
+	}
+	const routed = subcommands[defaultCommand];
+	const inheritsShorts = hasOwn(config, 'shorts') && !hasOwn(routed, 'shorts');
+	/** @type {{ help: string | false, version: string | false }} */
+	let letters;
+	try {
+		letters = resolveShorts({
+			...typeof config.version !== 'undefined' && { version: config.version },
+			...inheritsShorts && { shorts: config.shorts },
+			...routed,
+			...inheritsShorts && { [kInheritedShorts]: true },
+		});
+	} catch {
+		letters = { help: false, version: false };
+	}
+	return new Map(entries(routed.options ?? {})
+		.map(([name, option]) => /** @type {[unknown, string]} */ ([option.short, name]))
+		.concat([[letters.help, 'help'], [letters.version, 'version']])
+		.filter(/** @type {(entry: [unknown, string]) => entry is [string, string]} */ ([short]) => typeof short === 'string'));
+}

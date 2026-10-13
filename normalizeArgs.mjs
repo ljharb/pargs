@@ -77,7 +77,7 @@ function bareOptionName(arg, options, shorts) {
 	return at === chars.length - 1 && hasOwn(shorts, chars[at]) ? shorts[chars[at]] : null;
 }
 
-/** @type {(state: { out: string[], args: string[], i: number, name: string, config: ArityOptionConfig }) => number} */
+/** @type {(state: { out: string[], args: readonly string[], i: number, name: string, config: ArityOptionConfig, stops: ReadonlySet<string> }) => number} */
 function pushOption(state) {
 	const {
 		out,
@@ -85,6 +85,7 @@ function pushOption(state) {
 		i,
 		name,
 		config,
+		stops,
 	} = state;
 	const arg = args[i];
 	const next = args[i + 1];
@@ -122,8 +123,15 @@ function pushOption(state) {
 	if (config.variadic) {
 		// keep collecting the run as repeated occurrences, which is the shape
 		// `multiple` already understands; `greedy` widens what counts as a value,
-		// so that it governs the whole run rather than only its first element
-		while (typeof args[j] === 'string' && args[j] !== '--' && (config.greedy || isValueLike(args[j]))) {
+		// so that it governs the whole run rather than only its first element. A
+		// token in `stops` (a subcommand name, after leading root options) ends the
+		// run, so that the command it names is not also collected as a value.
+		while (
+			typeof args[j] === 'string'
+			&& args[j] !== '--'
+			&& !stops.has(args[j])
+			&& (config.greedy || isValueLike(args[j]))
+		) {
 			out[out.length] = `--${name}=${args[j]}`;
 			j += 1;
 		}
@@ -131,8 +139,11 @@ function pushOption(state) {
 	return j;
 }
 
-/** @type {(args: string[], options: ArityOptions) => string[]} */
-export default function normalizeArgs(args, options) {
+// `origins` holds, for each element of `out`, the index in `args` of the
+// argument it was rewritten from, so that a caller can map a position in the
+// output back to the argument list it was given.
+/** @type {(args: readonly string[], options: ArityOptions, stops?: ReadonlySet<string>) => { out: string[], origins: number[] }} */
+export function normalizeWithOrigins(args, options, stops = new Set()) {
 	if (args.some((arg) => arg.includes('\0'))) {
 		throw new TypeError('Error: arguments may not contain a NUL byte');
 	}
@@ -148,6 +159,8 @@ export default function normalizeArgs(args, options) {
 
 	/** @type {string[]} */
 	const out = [];
+	/** @type {number[]} */
+	const origins = [];
 	let i = 0;
 	// where the previous step began; a token is only a pending value if that step
 	// *left it in place*, so a value already swallowed by an arity option ahead of
@@ -157,8 +170,11 @@ export default function normalizeArgs(args, options) {
 		const arg = args[i];
 		if (arg === '--') {
 			// everything after the terminator is a positional, verbatim
-			out.push(...args.slice(i));
-			return out;
+			for (let k = i; k < args.length; k++) {
+				out[out.length] = args[k];
+				origins[origins.length] = k;
+			}
+			return { out, origins };
 		}
 		// If the previous token was a plain value-taking option written bare, this
 		// token is that option's value, not an occurrence of its own - rewriting it
@@ -176,11 +192,20 @@ export default function normalizeArgs(args, options) {
 				i,
 				name,
 				config: options[name],
+				stops,
 			});
 		} else {
 			out[out.length] = arg;
 			i += 1;
 		}
+		while (origins.length < out.length) {
+			origins[origins.length] = previousStart;
+		}
 	}
-	return out;
+	return { out, origins };
+}
+
+/** @type {(args: readonly string[], options: ArityOptions, stops?: ReadonlySet<string>) => string[]} */
+export default function normalizeArgs(args, options, stops) {
+	return normalizeWithOrigins(args, options, stops).out;
 }

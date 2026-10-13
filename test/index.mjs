@@ -3779,3 +3779,882 @@ test('pargs - a node binary reached through a symlink is not a positional', asyn
 
 	t.end();
 });
+
+test('pargs - root options alongside subcommands', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '2.3.4' })),
+	]);
+
+	const config = /** @type {const} */ ({
+		options: {
+			name: { type: 'string' },
+			setup: { short: 's', type: 'boolean' },
+		},
+		subcommands: {
+			build: {
+				allowPositionals: true,
+				options: { verbose: { type: 'boolean' } },
+			},
+		},
+	});
+
+	/** @type {(st: import('tape').Test, args: string[]) => ReturnType<typeof pargs<typeof config>>} */
+	function run(st, args) {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint].concat(args) });
+		return pargs(entrypoint, config);
+	}
+
+	t.test('a root option alone is the whole invocation', async (st) => {
+		const result = await run(st, ['--setup']);
+		st.equal(result.values.setup, true, 'the root option is parsed');
+		st.equal(result.command, undefined, 'there is no command');
+		st.deepEqual(result.errors, [], 'no errors');
+		st.equal(await result.help({ exit: false }), false, 'help() has nothing to handle');
+	});
+
+	t.test('a negated root option alone is the whole invocation', async (st) => {
+		const result = await run(st, ['--no-setup']);
+		st.equal(result.values.setup, false, 'the negated root option is parsed');
+		st.equal(result.command, undefined, 'there is no command');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a bare invocation is still an unknown command', async (st) => {
+		const result = await run(st, []);
+		st.deepEqual(result.errors, ['Error: unknown command'], 'errors with no command');
+	});
+
+	t.test('leading root options, then the subcommand and its options', async (st) => {
+		const result = await run(st, ['-s', '--name=x', 'build', '--verbose', 'a']);
+		st.equal(result.values.setup, true, 'the short root option is parsed');
+		st.equal(result.values.name, 'x', 'the inline-valued root option is parsed');
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+		st.equal(result.command?.values.verbose, true, 'the subcommand option is parsed');
+		st.deepEqual(result.command?.positionals, ['a'], 'the subcommand positional is parsed');
+		st.deepEqual(result.errors, [], 'no root errors');
+		st.deepEqual(result.command?.errors, [], 'no subcommand errors');
+	});
+
+	t.test('a root option value that equals the command name', async (st) => {
+		const result = await run(st, ['--name', 'build', '-s', 'build']);
+		st.equal(result.values.name, 'build', 'the root option takes the next token as its value');
+		st.equal(result.command?.name, 'build', 'the following token selects the subcommand');
+		st.deepEqual(
+			process.argv,
+			[process.execPath, entrypoint, '--name', 'build', '-s'],
+			'the command name, not the option value, is spliced out of `process.argv`',
+		);
+	});
+
+	t.test('the command name is still found when the tail of `process.argv` is not `argv`', async (st) => {
+		const result = await run(st, ['build', entrypoint]);
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+		st.deepEqual(
+			process.argv,
+			[process.execPath, entrypoint, entrypoint],
+			'the command name is spliced out of `process.argv`',
+		);
+	});
+
+	t.test('root options are not accepted after the command', async (st) => {
+		const result = await run(st, ['build', '--setup']);
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+		st.equal(result.values.setup, undefined, 'the root option is not set');
+		st.ok(result.command?.errors.some((e) => e.includes('--setup')), 'the subcommand rejects it');
+	});
+
+	t.test('an unknown leading option ends the root options', async (st) => {
+		const result = await run(st, ['--setup', '--bogus', 'build']);
+		st.ok(result.errors.some((e) => e.includes('bogus')), 'the unknown option is reported');
+	});
+
+	t.test('`--no-` of a non-boolean root option ends the root options', async (st) => {
+		const result = await run(st, ['--no-name', 'build']);
+		st.ok(result.errors.length > 0, 'it is an error');
+		st.equal(result.command, undefined, 'there is no command');
+	});
+
+	t.test('a cluster of shorts that is not all root options ends the root options', async (st) => {
+		const result = await run(st, ['-sz', 'build']);
+		st.equal(result.values.setup, undefined, 'the cluster is not split');
+		st.equal(result.command, undefined, 'there is no command');
+		st.ok(result.errors.some((e) => e.includes('-z')), 'the unknown short is reported');
+	});
+
+	t.test('a root option whose name starts with `no-` leads the command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--no-cache', 'dir', 'build'] });
+		const result = await pargs(entrypoint, {
+			options: { 'no-cache': { type: 'string' } },
+			subcommands: { build: {} },
+		});
+		st.equal(result.values['no-cache'], 'dir', 'the root option and its value are parsed');
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a root option error is reported when a subcommand follows', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--color=bogus', 'build', '--verbose'] });
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		st.teardown(() => {
+			process.exitCode = realExitCode;
+		});
+		const result = await pargs(entrypoint, {
+			options: { color: { type: 'enum', choices: ['red', 'blue'] } },
+			subcommands: { build: { options: { verbose: { type: 'boolean' } } } },
+		});
+		st.deepEqual(result.errors, ['Error: Invalid value for option "color"'], 'the root reports the error');
+		st.equal(result.command?.name, 'build', 'the subcommand is still parsed');
+
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const handled = await result.help({ exit: false });
+		const logs = logCapture().map((call) => call.args.join(' '));
+		const errors = errorCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'errors', 'help() reports the error');
+		st.ok(logs.some((log) => log.includes('Commands:')), 'prints the root usage');
+		st.deepEqual(errors, ['Error: Invalid value for option "color"'], 'prints the root error');
+		st.equal(process.exitCode, 1, 'sets a failing exit code');
+	});
+
+	t.test('root and subcommand errors are reported together', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--color=bogus', 'build', '--bogus'] });
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		st.teardown(() => {
+			process.exitCode = realExitCode;
+		});
+		const result = await pargs(entrypoint, {
+			options: { color: { type: 'enum', choices: ['red', 'blue'] } },
+			subcommands: { build: {} },
+		});
+
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const handled = await result.help({ exit: false });
+		logCapture();
+		const errors = errorCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'errors', 'help() reports the errors');
+		st.equal(errors.length, 2, 'prints both errors');
+		st.equal(errors[0], 'Error: Invalid value for option "color"', 'the root error first');
+		st.ok(errors[1].includes('bogus'), 'then the subcommand error');
+	});
+
+	t.test('a root boolean whose name starts with `no-` leads the command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--no-color', 'build'] });
+		const result = await pargs(entrypoint, {
+			options: { 'no-color': { type: 'boolean' } },
+			subcommands: { build: {} },
+		});
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a NUL byte after the root options is not the root\'s to reject', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--files', 'a', 'build', 'x\0y'],
+			options: { files: { type: 'string', variadic: true } },
+			subcommands: { build: { allowPositionals: true } },
+		});
+		st.deepEqual(result.values.files, ['a'], 'the root option is parsed');
+		st.deepEqual(result.command?.positionals, ['x\0y'], 'the subcommand gets the argument');
+	});
+
+	t.test('an error pushed onto a subcommand after a root error is still reported', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--color=bogus', 'build'] });
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		st.teardown(() => {
+			process.exitCode = realExitCode;
+		});
+		const result = await pargs(entrypoint, {
+			options: { color: { type: 'enum', choices: ['red', 'blue'] } },
+			subcommands: { build: {} },
+		});
+		result.command?.errors.push('Error: custom validation failed');
+
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const handled = await result.help({ exit: false });
+		logCapture();
+		const errors = errorCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'errors', 'help() reports the errors');
+		st.deepEqual(
+			errors,
+			['Error: Invalid value for option "color"', 'Error: custom validation failed'],
+			'prints both errors',
+		);
+	});
+
+	t.test('a root error does not hide a nested subcommand\'s error', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--color=bogus', 'db', 'migrate', '--to=x'] });
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		st.teardown(() => {
+			process.exitCode = realExitCode;
+		});
+		const result = await pargs(entrypoint, {
+			options: { color: { type: 'enum', choices: ['red', 'blue'] } },
+			subcommands: {
+				db: {
+					subcommands: {
+						migrate: { options: { to: { type: 'integer' } } },
+					},
+				},
+			},
+		});
+
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const handled = await result.help({ exit: false });
+		logCapture();
+		const errors = errorCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'errors', 'help() reports the errors');
+		st.deepEqual(
+			errors,
+			['Error: Invalid value for option "color"', 'Error: Invalid integer value for option "to"'],
+			'prints the root error and the nested one',
+		);
+	});
+
+	t.test('a leading `--` ends the root options', async (st) => {
+		const result = await run(st, ['--setup', '--', 'build']);
+		st.equal(result.command, undefined, 'the terminator is not a command');
+		st.deepEqual(result.errors, ['Error: unknown command "--"'], 'it is an unknown command');
+	});
+
+	t.test('root `--help` is answered at the root', async (st) => {
+		const result = await run(st, ['--help']);
+		st.deepEqual(result.errors, [], 'no `unknown command` error');
+
+		const logCapture = st.capture(console, 'log');
+		st.equal(await result.help({ exit: false }), 'help', 'help() reports it printed help');
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.ok(logs.some((log) => log.includes('Usage: test.mjs [options] <command>')), 'prints the root usage');
+		st.ok(logs.some((log) => log.includes('Commands:') && log.includes('build')), 'lists the commands');
+		st.notOk(process.exitCode, 'does not set a failing exit code');
+	});
+
+	t.test('root `--help` before a command is still answered at the root', async (st) => {
+		const result = await run(st, ['--help', 'build']);
+		st.equal(result.command?.name, 'build', 'the subcommand is still parsed');
+
+		const logCapture = st.capture(console, 'log');
+		st.equal(await result.help({ exit: false }), 'help', 'help() reports it printed help');
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.ok(logs.some((log) => log.includes('Commands:')), 'prints the root help, not the command help');
+	});
+
+	t.test('root `--version` before a command is answered at the root', async (st) => {
+		const result = await run(st, ['--version', 'build']);
+
+		const logCapture = st.capture(console, 'log');
+		st.equal(await result.help({ exit: false }), 'version', 'help() reports it printed the version');
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.ok(logs.includes('v2.3.4'), 'prints the version');
+	});
+
+	t.test('a root `variadic` run ends at the command name', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--files', 'a', 'b', 'build', 'c'] });
+		const result = await pargs(entrypoint, {
+			options: { files: { type: 'string', variadic: true } },
+			subcommands: { build: { allowPositionals: true } },
+		});
+		st.deepEqual(result.values.files, ['a', 'b'], 'the run collects the values before the command');
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+		st.deepEqual(result.command?.positionals, ['c'], 'the rest is the subcommand\'s');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a root `variadic` value spelled like a command can still be given inline', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--files=build', 'build'] });
+		const result = await pargs(entrypoint, {
+			options: { files: { type: 'string', variadic: true } },
+			subcommands: { build: {} },
+		});
+		st.deepEqual(result.values.files, ['build'], 'the inline value is collected');
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+	});
+
+	t.test('a root `variadic` run with no command after it', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--files', 'a', 'b'] });
+		const result = await pargs(entrypoint, {
+			options: { files: { type: 'string', variadic: true } },
+			subcommands: { build: {} },
+		});
+		st.deepEqual(result.values.files, ['a', 'b'], 'the run collects every value');
+		st.equal(result.command, undefined, 'there is no command');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a root `optionalValue` option takes a command name as its value, as it does any value', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--log', 'build'] });
+		const result = await pargs(entrypoint, {
+			options: { log: { type: 'string', optionalValue: true } },
+			subcommands: { build: {} },
+		});
+		st.equal(result.values.log, 'build', 'the explicit value is taken');
+		st.equal(result.command, undefined, 'there is no command');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a bare root `optionalValue` option leads the command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--log', '--setup', 'build'] });
+		const result = await pargs(entrypoint, {
+			options: {
+				log: { type: 'string', optionalValue: true },
+				setup: { type: 'boolean' },
+			},
+			subcommands: { build: {} },
+		});
+		st.equal(result.values.log, true, 'the bare occurrence is parsed');
+		st.equal(result.values.setup, true, 'the following root option is parsed');
+		st.equal(result.command?.name, 'build', 'the subcommand is selected');
+	});
+
+	t.test('a subcommand `--help` names the command in its usage line', async (st) => {
+		const result = await run(st, ['build', '--help']);
+
+		const logCapture = st.capture(console, 'log');
+		st.equal(await result.help({ exit: false }), 'help', 'help() reports it printed help');
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.ok(logs.some((log) => log.includes('Usage: test.mjs build [options]')), 'the usage line names the subcommand');
+	});
+
+	t.test('a nested subcommand `--help` names the whole command path', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'db', 'migrate', '--help'] });
+		const result = await pargs(entrypoint, {
+			subcommands: {
+				db: {
+					subcommands: {
+						migrate: {},
+					},
+				},
+			},
+		});
+
+		const logCapture = st.capture(console, 'log');
+		await result.command.help({ exit: false });
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.ok(logs.some((log) => log.includes('Usage: test.mjs db migrate [--help]')), 'the usage line names the full path');
+	});
+
+	t.test('a root `variadic` option takes a command name as its first value, as it does any value', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--files', 'build', 'x'],
+			options: { files: { type: 'string', variadic: true } },
+			subcommands: { build: { allowPositionals: true }, test: {} },
+		});
+		st.deepEqual(result.values.files, ['build', 'x'], 'the first value is taken, and the run continues');
+		st.equal(result.command, undefined, 'so there is no command');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a root option after the subcommand name does not end the root options', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--setup', 'build', '--help'],
+			options: { setup: { type: 'boolean' } },
+			subcommands: { build: {}, test: {} },
+		});
+		st.equal(result.values.setup, true, 'the root option is parsed');
+		st.equal(result.command?.name, 'build', 'the subcommand runs');
+		st.equal(result.command?.values.help, true, 'and gets its own `--help`');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a root `version` option of its own', async (st) => {
+		const versioned = /** @type {const} */ ({
+			options: { version: { type: 'boolean' } },
+			subcommands: { build: {}, test: {} },
+		});
+		const alone = await pargs(entrypoint, { ...versioned, args: ['--version'] });
+		st.equal(alone.values.version, true, 'is parsed at the root');
+		st.deepEqual(alone.errors, [], 'and is the whole invocation');
+
+		const unknown = await pargs(entrypoint, { ...versioned, args: ['--version', 'b'] });
+		st.deepEqual(unknown.errors, ['Error: unknown command "b"'], 'does not hide an unknown command');
+	});
+
+	t.test('`command` may be absent when root `options` may be', async (st) => {
+		/** @type {{ setup: { type: 'boolean' } } | undefined} */
+		const options = { setup: { type: 'boolean' } };
+		const result = await pargs(entrypoint, {
+			args: ['--setup'],
+			options,
+			subcommands: { build: {}, test: {} },
+		});
+		// @ts-expect-error `command` is optional
+		st.throws(() => result.command.name, TypeError, 'there is no command');
+	});
+
+	t.test('`command` may be absent when root `options` are untyped', async (st) => {
+		// `JSON.parse` is untyped, as options loaded from a file would be
+		const result = await pargs(entrypoint, {
+			args: ['--setup'],
+			options: JSON.parse('{ "setup": { "type": "boolean" } }'),
+			subcommands: { build: {}, test: {} },
+		});
+		// @ts-expect-error `command` is optional
+		st.throws(() => result.command.name, TypeError, 'there is no command');
+	});
+});
+
+test('pargs - root options alongside a `defaultCommand`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+	await writeFile(entrypoint, '// test file');
+
+	t.test('a root-only option is parsed at the root, and the rest routes to the default', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--setup', '--json'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			options: { setup: { type: 'boolean' } },
+			subcommands: {
+				run: { options: { json: { type: 'boolean' } } },
+			},
+		});
+		st.equal(result.values.setup, true, 'the root option is parsed');
+		st.equal(result.command.name, 'run', 'routed to the default command');
+		st.equal(result.command.values.json, true, 'the default command parsed its option');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('an option shared with the default command belongs to the default command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--json', 'input'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			options: { json: { type: 'boolean' } },
+			subcommands: {
+				run: {
+					allowPositionals: 1,
+					options: { json: { type: 'boolean' } },
+				},
+			},
+		});
+		st.equal(result.values.json, undefined, 'the root does not take it');
+		st.equal(result.command.values.json, true, 'the default command parsed it');
+		st.deepEqual(result.command.positionals, ['input'], 'the default command received the positional');
+	});
+
+	t.test('a root short the default command also declares belongs to the default command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '-v', 'build'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			options: { verbose: { type: 'boolean', short: 'v' } },
+			subcommands: {
+				build: {},
+				run: {
+					allowPositionals: 1,
+					options: { vendor: { type: 'boolean', short: 'v' } },
+				},
+			},
+		});
+		st.equal(result.values.verbose, undefined, 'the root does not take it');
+		st.equal(result.command.name, 'run', 'routed to the default command');
+		st.equal(result.command.name === 'run' && result.command.values.vendor, true, 'the default command parsed it');
+		st.deepEqual(result.command.positionals, ['build'], 'the default command received the positional');
+	});
+
+	t.test('a bare root `optionalValue` option does not take a default command option as its value', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--config', '--json'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			options: { config: { type: 'string', optionalValue: true } },
+			subcommands: {
+				run: { options: { json: { type: 'boolean' } } },
+			},
+		});
+		st.equal(result.values.config, true, 'the bare occurrence is parsed at the root');
+		st.equal(result.command.values.json, true, 'the default command parsed its option');
+		st.deepEqual(result.errors, [], 'no root errors');
+		st.deepEqual(result.command.errors, [], 'no default command errors');
+	});
+
+	t.test('a root option error is reported when routed to the default command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--count=x', 'input'] });
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		st.teardown(() => {
+			process.exitCode = realExitCode;
+		});
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			options: { count: { type: 'integer' } },
+			subcommands: { run: { allowPositionals: 1 } },
+		});
+		st.deepEqual(result.errors, ['Error: Invalid integer value for option "count"'], 'the root reports the error');
+
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const handled = await result.help({ exit: false });
+		logCapture();
+		const errors = errorCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'errors', 'help() reports the error');
+		st.deepEqual(errors, ['Error: Invalid integer value for option "count"'], 'prints the root error');
+	});
+
+	t.test('`--help` and `--version` may lead root-only options', async (st) => {
+		await writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '3.4.5' }));
+		const config = /** @type {const} */ ({
+			defaultCommand: 'run',
+			options: { verbose: { type: 'boolean' } },
+			subcommands: { run: {}, other: {} },
+		});
+
+		st.test('`--help`', async (s2t) => {
+			s2t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help', '--verbose'] });
+			const result = await pargs(entrypoint, config);
+			s2t.equal(result.values.verbose, true, 'the root option is parsed');
+			s2t.deepEqual(result.errors, [], 'no root errors');
+			s2t.deepEqual(result.command.errors, [], 'no default command errors');
+			const logCapture = s2t.capture(console, 'log');
+			const handled = await result.help({ exit: false });
+			const logs = logCapture().map((call) => call.args.join(' '));
+			s2t.equal(handled, 'help', 'help() prints help');
+			s2t.ok(logs.some((log) => log.includes('Commands:')), 'prints the root help');
+		});
+
+		st.test('`--version`', async (s2t) => {
+			s2t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--version', '--verbose'] });
+			const result = await pargs(entrypoint, config);
+			s2t.equal(result.values.verbose, true, 'the root option is parsed');
+			const logCapture = s2t.capture(console, 'log');
+			const handled = await result.help({ exit: false });
+			const logs = logCapture().map((call) => call.args.join(' '));
+			s2t.equal(handled, 'version', 'help() prints the version');
+			s2t.deepEqual(logs, ['v3.4.5'], 'prints the version');
+		});
+	});
+
+	t.test('a root `--help` before a command name still routes to the default command', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--help', 'other'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			subcommands: {
+				run: { allowPositionals: 1 },
+				other: {},
+			},
+		});
+		st.equal(result.command.name, 'run', 'the default command is selected');
+		st.deepEqual(result.command.positionals, ['other'], 'the command name is its positional');
+		st.deepEqual(result.command.errors, [], 'no command errors');
+		const logCapture = st.capture(console, 'log');
+		const handled = await result.help({ exit: false });
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'help', 'help() prints help');
+		st.ok(logs.some((log) => log.includes('Commands:')), 'prints the root help');
+	});
+
+	t.test('a reserved short in a cluster with a root-only short stays with the root', async (st) => {
+		await writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '3.4.5' }));
+		const config = /** @type {const} */ ({
+			defaultCommand: 'run',
+			shorts: true,
+			options: { verbose: { type: 'boolean', short: 'v' } },
+			subcommands: { run: {}, other: {} },
+		});
+
+		st.test('`-h`', async (s2t) => {
+			s2t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '-vh'] });
+			const result = await pargs(entrypoint, config);
+			s2t.equal(result.values.verbose, true, 'the root option is parsed');
+			s2t.deepEqual(result.command.errors, [], 'no default command errors');
+			const logCapture = s2t.capture(console, 'log');
+			const handled = await result.help({ exit: false });
+			const logs = logCapture().map((call) => call.args.join(' '));
+			s2t.equal(handled, 'help', 'help() prints help');
+			s2t.ok(logs.some((log) => log.includes('Commands:')), 'prints the root help');
+		});
+
+		st.test('`-V`', async (s2t) => {
+			s2t.intercept(process, 'argv', { value: [process.execPath, entrypoint, '-vV'] });
+			const result = await pargs(entrypoint, config);
+			const logCapture = s2t.capture(console, 'log');
+			const handled = await result.help({ exit: false });
+			const logs = logCapture().map((call) => call.args.join(' '));
+			s2t.equal(handled, 'version', 'help() prints the version');
+			s2t.deepEqual(logs, ['v3.4.5'], 'prints the version');
+		});
+	});
+
+	t.test('a root short the default command resolves for `--version` belongs to the default command', async (st) => {
+		await writeFile(join(testDir, 'package.json'), JSON.stringify({ version: '3.4.5' }));
+		const config = /** @type {const} */ ({
+			defaultCommand: 'run',
+			shorts: true,
+			options: { force: { type: 'boolean', short: 'V' } },
+			subcommands: { run: {}, other: {} },
+		});
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '-V'] });
+		const result = await pargs(entrypoint, config);
+		st.equal(result.values.force, undefined, 'the root does not take it');
+		st.equal(result.command.values.version, true, 'the default command parsed it');
+		const logCapture = st.capture(console, 'log');
+		const handled = await result.help({ exit: false });
+		const logs = logCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'version', 'help() prints the version');
+		st.deepEqual(logs, ['v3.4.5'], 'prints the version');
+
+		st.doesNotMatch(generateHelp('cli', config), /-V, --\[no-\]force/, 'the usage does not claim `-V` for the root option');
+	});
+
+	t.test('`--version` goes to the default command even when the root declares a `version` option', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, '--version'] });
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			options: { version: { type: 'boolean' } },
+			subcommands: { run: {}, other: {} },
+		});
+		st.equal(result.values.version, undefined, 'the root does not take it');
+		st.equal(result.command.values.version, true, 'the default command parsed it');
+	});
+
+	t.test('an error pushed onto the routed default command is still reported', async (st) => {
+		st.intercept(process, 'argv', { value: [process.execPath, entrypoint, 'input'] });
+		const realExitCode = process.exitCode;
+		process.exitCode = 0;
+		st.teardown(() => {
+			process.exitCode = realExitCode;
+		});
+		const result = await pargs(entrypoint, {
+			defaultCommand: 'run',
+			subcommands: { run: { allowPositionals: 1 }, other: {} },
+		});
+		result.command.errors.push('Error: custom validation failed');
+
+		const logCapture = st.capture(console, 'log');
+		const errorCapture = st.capture(console, 'error');
+		const handled = await result.help({ exit: false });
+		logCapture();
+		const errors = errorCapture().map((call) => call.args.join(' '));
+		st.equal(handled, 'errors', 'help() reports the error');
+		st.deepEqual(errors, ['Error: custom validation failed'], 'prints the pushed error');
+	});
+
+	t.test('root tokens index the arguments, even past a forwarded `--help`', async (st) => {
+		/** @type {(options: Record<string, PargsOptionConfig>, args: string[]) => Promise<unknown>} */
+		const rootTokens = async (options, args) => (await pargs(entrypoint, {
+			args,
+			defaultCommand: 'run',
+			options,
+			subcommands: { run: {}, other: {} },
+			tokens: true,
+		})).tokens.map((token) => [token.kind === 'option' && token.rawName, token.index]);
+		const verbose = /** @type {const} */ ({ verbose: { type: 'boolean', short: 'v' } });
+
+		st.deepEqual(
+			await rootTokens(verbose, ['--help', '-v']),
+			[['-v', 1]],
+			'a token after the forwarded flag keeps its index',
+		);
+		st.deepEqual(
+			await rootTokens(verbose, ['-v', '--help', '-v']),
+			[['-v', 0], ['-v', 2]],
+			'tokens on both sides of the forwarded flag keep their indices',
+		);
+		st.deepEqual(
+			await rootTokens({ ...verbose, list: { type: 'string', variadic: true } }, ['--help', '--list', 'a', 'b', '-v']),
+			[['--list', 1], ['--list', 3], ['-v', 4]],
+			'a rewritten variadic option keeps the index of each of its values',
+		);
+		st.deepEqual(
+			await rootTokens({ ...verbose, count: { type: 'string' } }, ['--help', '-v', '--count']),
+			[['-v', 1], ['--count', 2]],
+			'on the error path too',
+		);
+	});
+
+	t.test('a `--version` the default command does not answer is passed to it, to reject', async (st) => {
+		const config = /** @type {const} */ ({
+			defaultCommand: 'def',
+			subcommands: { def: { version: false, allowPositionals: true }, b: {} },
+		});
+		const unknown = (/** @type {string} */ flag) => [
+			`Error: Unknown option '${flag}'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- "${flag}"`,
+		];
+
+		const alone = await pargs(entrypoint, { ...config, args: ['--version'] });
+		st.equal(alone.values.version, false, 'the root does not take it');
+		st.equal(alone.command.name, 'def', 'routed to the default command');
+		st.deepEqual(alone.command.errors, unknown('--version'), 'which rejects it');
+
+		const named = await pargs(entrypoint, { ...config, args: ['--version', 'b'] });
+		st.equal(named.command.name, 'def', 'even when a subcommand name follows it');
+		st.deepEqual(named.command.errors, unknown('--version'), 'which rejects it');
+
+		const short = await pargs(entrypoint, { ...config, shorts: true, args: ['-V'] });
+		st.deepEqual(short.command.errors, unknown('-V'), 'and its short');
+
+		const led = await pargs(entrypoint, {
+			...config,
+			options: { color: { type: 'boolean' } },
+			args: ['--color', '--version'],
+		});
+		st.equal(led.values.color, true, 'a root option before it is still the root\'s');
+		st.deepEqual(led.command.errors, unknown('--version'), 'and it is still rejected');
+	});
+
+	t.test('a `--no-` form of a root option that is not a boolean does not lead', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-name', 'x'],
+			defaultCommand: 'def',
+			options: { name: { type: 'string' } },
+			subcommands: { def: { allowPositionals: true }, b: {} },
+		});
+		st.deepEqual(result.errors, [], 'the root does not take it');
+		st.equal(result.command.name, 'def', 'routed to the default command');
+		st.deepEqual(
+			result.command.errors,
+			['Error: Unknown option \'--no-name\'. To specify a positional argument starting with a \'-\', place it at the end of the command after \'--\', as in \'-- "--no-name"'],
+			'which rejects it',
+		);
+	});
+
+	t.test('a `--version` the default command declares does not end the root options', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--version', '--setup'],
+			defaultCommand: 'def',
+			options: { setup: { type: 'boolean' } },
+			subcommands: { def: { options: { version: { type: 'boolean' } } }, b: {} },
+		});
+		st.equal(result.values.setup, true, 'the root option after it is parsed');
+		st.equal(result.command.values.version, true, 'the default command parsed it');
+		st.deepEqual(result.errors, [], 'no errors');
+	});
+
+	t.test('a root short the default command would claim for a `--version` it does not have stays the root\'s', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-V'],
+			defaultCommand: 'def',
+			options: { verbose: { type: 'boolean', short: 'V' } },
+			subcommands: { def: { shorts: true }, b: {} },
+			version: false,
+		});
+		st.equal(result.values.verbose, true, 'the root parsed it');
+		st.deepEqual(result.command.errors, [], 'the default command has no errors');
+	});
+});
+
+test('generateHelp - root options alongside subcommands', (t) => {
+	const own = generateHelp('myapp', {
+		options: { setup: { type: 'boolean' } },
+		subcommands: { build: {} },
+	});
+	t.match(own, /^Usage: myapp \[options\] <command>$/m, 'root-only options lead the command');
+
+	const shared = generateHelp('myapp', {
+		defaultCommand: 'build',
+		options: { json: { type: 'boolean' } },
+		subcommands: { build: { options: { json: { type: 'boolean' } } } },
+	});
+	t.match(shared, /^Usage: myapp <command> \[options\]$/m, 'options shared with the default command follow it');
+
+	const optionless = generateHelp('myapp', {
+		defaultCommand: 'build',
+		options: { setup: { type: 'boolean' } },
+		subcommands: { build: {} },
+	});
+	t.match(optionless, /^Usage: myapp \[options\] <command>$/m, 'a default command with no options shares none');
+
+	const mixed = generateHelp('myapp', {
+		defaultCommand: 'build',
+		options: {
+			out: { type: 'string' },
+			verbose: { type: 'boolean' },
+		},
+		subcommands: {
+			build: { options: { out: { type: 'string' } } },
+			test: {},
+		},
+	});
+	t.match(
+		mixed,
+		/^Usage: myapp \[options\] <command>\n {7}myapp \[options\] \[build options\]$/m,
+		'options of both kinds get a usage line each',
+	);
+	t.match(mixed, /^Options:\n {2}\s+--\[no-\]verbose\s*$/m, 'root-only options are listed as the root\'s');
+	t.match(mixed, /^build options:\n {2}\s+--out <string>\s*$/m, 'shared options are listed as the default command\'s');
+
+	const claimed = generateHelp('myapp', {
+		defaultCommand: 'build',
+		options: {
+			out: { type: 'string', short: 'o' },
+			verbose: { type: 'boolean', short: 'v' },
+		},
+		subcommands: {
+			build: {
+				options: {
+					out: { type: 'string', short: 'O' },
+					vendor: { type: 'boolean', short: 'v' },
+				},
+			},
+		},
+	});
+	t.match(claimed, /^ {6}--\[no-\]verbose$/m, 'a root short the default command claims is not shown');
+	t.match(claimed, /^ {2}-O, --out <string>$/m, 'a shared option shows the default command\'s short');
+
+	const reserved = generateHelp('myapp', {
+		shorts: true,
+		defaultCommand: 'build',
+		options: {
+			foo: { type: 'boolean', short: 'h' },
+			bar: { type: 'boolean', short: 'V' },
+		},
+		subcommands: { build: {}, test: {} },
+	});
+	t.match(reserved, /^ {2}-h, --help {2}/m, 'a root short the default command\'s `--help` claims is shown there');
+	t.match(reserved, /^ {2}-V, --version {2}/m, 'a root short the default command\'s `--version` claims is shown there');
+	t.match(reserved, /^ {6}--\[no-\]foo$/m, 'and not on the root option');
+
+	const grouped = generateHelp('myapp', {
+		defaultCommand: 'build',
+		options: {
+			out: { type: 'string', group: 'Output' },
+			verbose: { type: 'boolean' },
+		},
+		subcommands: { build: { options: { out: { type: 'string' } } }, test: {} },
+	});
+	t.equal(
+		grouped.split('\n').slice(0, 2).join('\n'),
+		'Usage: myapp [options] <command>\n',
+		'a shared option with a `group` of its own adds no usage line',
+	);
+	t.doesNotMatch(grouped, /^build options:$/m, 'nor a heading');
+	t.match(grouped, /^Output:\n {2}\s+--out <string>$/m, 'it is listed under its own group');
+
+	const mirror = generateHelp('myapp', {
+		defaultCommand: 'build',
+		options: { out: { type: 'string' } },
+		subcommands: { build: { options: { out: { type: 'string' } } }, test: {} },
+	});
+	t.equal(
+		mirror.split('\n').slice(0, 2).join('\n'),
+		'Usage: myapp <command> [options]\n',
+		'a root of only shared options has one usage line',
+	);
+	t.doesNotMatch(mirror, /^build options:$/m, 'and no heading for them');
+
+	t.doesNotThrow(
+		() => generateHelp('myapp', {
+			defaultCommand: 'build',
+			shorts: true,
+			options: { verbose: { type: 'boolean', short: 'v' } },
+			subcommands: {
+				build: {
+					shorts: { help: 'h' },
+					options: { host: { type: 'string', short: 'h' } },
+				},
+			},
+		}),
+		'a default command that can not resolve its own shorts does not break the root usage',
+	);
+
+	t.end();
+});

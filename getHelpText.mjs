@@ -7,6 +7,12 @@ import generateHelp from './generateHelp.mjs';
 
 const { entries } = Object;
 
+// the subcommand names a parsed level was reached through, so that its usage
+// line can name the command it documents (eg, `cli build [options]`)
+export const kCommandPath = Symbol('pargs: subcommand path');
+
+/** @typedef {PargsRootConfig & { [kCommandPath]: readonly string[] }} PargsInternalConfig */
+
 /** @type {(path: string) => Promise<null | { bin?: unknown, name?: unknown, version?: unknown }>} */
 async function readJSON(path) {
 	try {
@@ -69,7 +75,7 @@ export async function getVersion(realEntrypointPath) {
 	return '';
 }
 
-/** @type {(realEntrypointPath: string, config: PargsRootConfig) => Promise<string>} */
+/** @type {(realEntrypointPath: string, config: PargsRootConfig | PargsInternalConfig) => Promise<string>} */
 export default async function getHelpText(realEntrypointPath, config) {
 	try {
 		return `${await readFile(join(dirname(realEntrypointPath), './help.txt'), 'utf-8')}`;
@@ -77,6 +83,7 @@ export default async function getHelpText(realEntrypointPath, config) {
 		if (!e || typeof e !== 'object' || !('code' in e) || e.code !== 'ENOENT') {
 			throw e;
 		}
-		return generateHelp(await commandName(realEntrypointPath), config);
+		const path = kCommandPath in config ? config[kCommandPath] : [];
+		return generateHelp([await commandName(realEntrypointPath)].concat(path).join(' '), config);
 	}
 }

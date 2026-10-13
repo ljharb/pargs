@@ -1,7 +1,9 @@
-import resolveShorts, { kInheritedShorts } from './resolveShorts.mjs';
+import resolveShorts, { kInheritedShorts, routedShorts } from './resolveShorts.mjs';
 
 const {
 	entries,
+	fromEntries,
+	hasOwn,
 	keys,
 } = Object;
 
@@ -85,11 +87,30 @@ export default function generateHelp(name, config) {
 
 	const min = typeof minPositionals === 'number' ? minPositionals : 0;
 
+	// a routed `defaultCommand` parses this level's argv, so an option it also
+	// declares is its own, and can not lead a named command
+	const routed = config.defaultCommand
+		&& config.subcommands
+		&& config.subcommands[config.defaultCommand];
+	const routedOptions = (routed && routed.options) || {};
+	const optionNames = keys(options ?? {});
+	const ownOptions = optionNames.filter((key) => !hasOwn(routedOptions, key));
+	// only when the root has options of both kinds do they need telling apart, and
+	// a shared option with a `group` of its own is listed there instead
+	const ungroupedShared = optionNames.some((key) => hasOwn(routedOptions, key) && !options?.[key].group);
+	const sharedGroup = ownOptions.length > 0 && ungroupedShared ? `${config.defaultCommand} options` : null;
+
 	const usage = [`Usage: ${name}`];
-	if (subcommands) {
+	if (subcommands && ownOptions.length > 0) {
+		// the root's own options lead the command, git-style
+		usage[usage.length] = '[options]';
 		usage[usage.length] = '<command>';
+	} else {
+		if (subcommands) {
+			usage[usage.length] = '<command>';
+		}
+		usage[usage.length] = optionNames.length > 0 ? '[options]' : '[--help]';
 	}
-	usage[usage.length] = options && keys(options).length > 0 ? '[options]' : '[--help]';
 	if (!subcommands && (allowPositionals || positionals?.length)) {
 		if (positionals?.length) {
 			usage.push(...usagePositionals(positionals, min));
@@ -98,6 +119,10 @@ export default function generateHelp(name, config) {
 		}
 	}
 	lines[lines.length] = usage.join(' ');
+	if (sharedGroup) {
+		// the default command's options follow the root's, with no command named
+		lines[lines.length] = `${' '.repeat('Usage: '.length)}${name} [options] [${sharedGroup}]`;
+	}
 
 	if (subcommands) {
 		lines[lines.length] = '';
@@ -115,27 +140,43 @@ export default function generateHelp(name, config) {
 
 	// option rows tagged by `group`; the default group ("Options") is rendered
 	// first and carries the reserved `--help`
+	// a short the routed command claims is its own, not the root option's
+	const claimedShorts = routedShorts(config);
+	/** @type {(key: string, value: PargsOptionConfig) => string | false | undefined} */
+	const ownShort = (key, value) => (claimedShorts.get(/** @type {string} */ (value.short)) ?? key) === key
+		&& value.short;
 	const optionRows = entries(options ?? {}).map(([key, value]) => {
-		const short = value.short ? `-${value.short}, ` : '    ';
+		const letter = hasOwn(routedOptions, key)
+			? routedOptions[key].short
+			: ownShort(key, value);
+		const short = letter ? `-${letter}, ` : '    ';
 		const flag = value.type === 'boolean' ? `--[no-]${key}` : `--${key}`;
 		return /** @type {[string, string, string]} */ ([
-			value.group || 'Options',
+			value.group || (sharedGroup && hasOwn(routedOptions, key) ? sharedGroup : 'Options'),
 			`${short}${flag}${valuePlaceholder(value)}`,
 			`${value.description || ''}${formatDefault(value)}`.trim(),
 		]);
 	});
-	// a routed `defaultCommand` parses this level's argv, so its own options claim
-	// short letters here too; the usage must not advertise one it owns
-	const routed = config.defaultCommand
-		&& config.subcommands
-		&& config.subcommands[config.defaultCommand];
+	// the routed command's own options claim short letters here too; the usage
+	// must not advertise one it owns.
 	// the merged set is two separately-authored option tables, so a letter the
 	// routed command claims is the "not written in one place" case: yield to it
 	// rather than failing, exactly as the parse of that subcommand already does
 	const { help, version } = resolveShorts(routed
 		? {
 			...config,
-			options: { ...config.options, ...routed.options },
+			// a root short the routed command claims is not parsed as the root's,
+			// so it does not keep `--help`/`--version` from having it
+			options: {
+				...fromEntries(entries(config.options ?? {}).map(([key, { short, ...value }]) => [
+					key,
+					/** @type {PargsOptionConfig} */ ({
+						...value,
+						...ownShort(key, /** @type {PargsOptionConfig} */ ({ short, ...value })) && { short },
+					}),
+				])),
+				...routed.options,
+			},
 			[kInheritedShorts]: true,
 		}
 		: config);

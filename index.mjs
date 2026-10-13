@@ -3,9 +3,10 @@ import { realpathSync } from 'fs';
 
 import isParseArgsError from './isParseArgsError.mjs';
 import maybeStripColors from './maybeStripColors.mjs';
-import getHelpText, { getVersion } from './getHelpText.mjs';
-import resolveShorts, { kInheritedShorts } from './resolveShorts.mjs';
-import normalizeArgs, { bareValue, needsNormalizing, scrubBareTokens } from './normalizeArgs.mjs';
+import getHelpText, { getVersion, kCommandPath } from './getHelpText.mjs';
+import resolveShorts, { kInheritedShorts, routedShorts } from './resolveShorts.mjs';
+import { bareValue, needsNormalizing, normalizeWithOrigins, scrubBareTokens } from './normalizeArgs.mjs';
+import leadingOptions from './leadingOptions.mjs';
 
 const {
 	hasOwn,
@@ -29,6 +30,8 @@ const {
  *   ParseArgsConfig,
  * } from './types.d.mts'
  */
+
+/** @import { PargsInternalConfig } from './getHelpText.mjs' */
 
 // a recursive call uses this to tell a subcommand whether the `process.argv`
 // splice is still its to perform; it can not be expressed in the public config
@@ -171,12 +174,6 @@ export default async function pargs(entrypointPath, obj) {
 			throw new TypeError('Error: `defaultCommand` must be a key of `subcommands`');
 		}
 	}
-
-	// when subcommands are defined, the first arg selects the subcommand;
-	// if it is not a known subcommand, fall back to `defaultCommand`
-	// (parsing the full argv against it) when one is configured.
-	const knownSubcommand = !!subcommands && hasOwn(subcommands, argv[0]);
-	const routeToDefault = !!subcommands && !knownSubcommand && typeof defaultCommand === 'string';
 
 	// `version` is provided automatically, but a user-defined `version` option
 	// (with its own handling) is preferred over the built-in one.
@@ -328,10 +325,67 @@ export default async function pargs(entrypointPath, obj) {
 		],
 	] : [])));
 
+	// when subcommands are defined, the root parses only its own options, and
+	// only those that lead the argument list, git-style; the first arg after
+	// them selects the subcommand. If it is not a known subcommand, fall back to
+	// `defaultCommand` (parsing the rest of argv against it) when one is
+	// configured. An option the `defaultCommand` also accepts - by name, or by
+	// short - belongs to that command, so that a root which mirrors its default
+	// command's options for the help text keeps routing them there.
+	const routed = typeof defaultCommand === 'string' && subcommands ? subcommands[defaultCommand] : null;
+	const routedOptions = routed?.options ?? {};
+	const routedVersion = routed && hasOwn(routed, 'version') ? routed.version : obj.version;
+	const routedAcceptsVersion = hasOwn(routedOptions, 'version') || routedVersion !== false;
+	// `--help`, and a `--version` the default command answers, do not end the
+	// root options, since every command has them; they still route to the
+	// default command, which answers them exactly as it always has
+	/** @type {(name: string) => boolean} */
+	const isReserved = (name) => !!routed && (name === 'help' || (name === 'version' && routedAcceptsVersion));
+	const claimedShorts = routedShorts(obj);
+	const leading = subcommands
+		? leadingOptions(
+			argv,
+			fromEntries(entries(normalizedOptions)
+				// a built-in `--version` the default command does not answer is still
+				// passed to it, to reject, as it always was
+				.filter(([key]) => isReserved(key)
+					|| !(hasOwn(routedOptions, key) || (!!routed && key === 'version' && hasBuiltinVersion)))
+				.map(([key, { short, ...option }]) => [
+					key,
+					{
+						...option,
+						...(claimedShorts.get(/** @type {string} */ (short)) ?? key) === key && { short },
+					},
+				])),
+			{
+				negatable: new Set(optsEntries.filter(([, { type }]) => type === 'boolean').map(([key]) => key)),
+				commands: new Set(keys(subcommands)),
+			},
+		)
+		: {
+			count: 0,
+			steps: [],
+		};
+	const reservedSteps = leading.steps.filter(({ names }) => names.some(isReserved));
+	const rest = argv.slice(leading.count);
+	const knownSubcommand = !!subcommands && reservedSteps.length === 0 && hasOwn(subcommands, rest[0]);
+	const routeToDefault = !!routed && !knownSubcommand;
+
+	// a cluster that mixes a reserved short with the root's own stays with the
+	// root, whose `--help`/`--version` the routed default command's help honors
+	const forwarded = routeToDefault ? reservedSteps.filter(({ names }) => names.every(isReserved)) : [];
+	/** @type {(steps: typeof leading.steps) => string[]} */
+	const argsOf = (steps) => steps.flatMap(({ start, end }) => argv.slice(start, end));
+	const forwardedArgs = argsOf(forwarded);
+
 	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions, args: readonly string[] }} */
 	const newObj = {
 		...passedConfig,
-		args: subcommands ? routeToDefault ? [] : argv.slice(0, 1) : argv,
+		args: subcommands
+			? routeToDefault
+				? argsOf(leading.steps.filter((step) => !forwarded.includes(step)))
+				: argv.slice(0, leading.count + 1)
+			: argv,
 		options: normalizedOptions,
 		tokens: true,
 		allowNegative: true,
@@ -343,9 +397,30 @@ export default async function pargs(entrypointPath, obj) {
 	// `parseArgs` can not express, so that every config that does not opt in gets
 	// back the identical array - and therefore the identical `tokens`
 	const normalizing = needsNormalizing(normalizedOptions);
-	if (normalizing) {
-		newObj.args = normalizeArgs(/** @type {string[]} */ (newObj.args), normalizedOptions);
+	const normalized = normalizing
+		? normalizeWithOrigins(newObj.args, normalizedOptions, new Set(keys(subcommands ?? {})))
+		: null;
+	if (normalized) {
+		newObj.args = normalized.out;
 	}
+
+	// the forwarded `--help`/`--version` are taken out of the root's args, but
+	// its tokens still index the arguments it was given
+	const argvIndices = forwarded.length > 0
+		? leading.steps
+			.filter((step) => !forwarded.includes(step))
+			.flatMap(({ start, end }) => from({ length: end - start }, (_, i) => start + i))
+		: null;
+	/** @type {<T extends { index: number }>(tokens: T[]) => T[]} */
+	const reindex = (tokens) => (argvIndices
+		? tokens.map((token) => {
+			const origin = normalized ? normalized.origins[token.index] : token.index;
+			return {
+				...token,
+				index: token.index + argvIndices[origin] - origin,
+			};
+		})
+		: tokens);
 
 	try {
 		const { tokens, ...results } = parseArgs(newObj);
@@ -453,17 +528,27 @@ export default async function pargs(entrypointPath, obj) {
 		let command;
 		/** @type {undefined | string} */
 		let commandName;
+		/** @type {undefined | (PargsInternalConfig & { [kMutateArgv]: boolean, [kInheritedVersion]: boolean })} */
 		let commandConfig;
 		// the top level owns the `process.argv` splice, and only when it is the
 		// thing being parsed; a nested call inherits the answer from its parent.
 		const mayMutateArgv = hasOwn(obj, kMutateArgv)
 			? /** @type {Record<symbol, boolean>} */ (obj)[kMutateArgv]
 			: !hasArgs;
+		// a root-level `--help` or `--version` is answered at the root, whether or
+		// not a subcommand follows it
+		const rootRequested = !routeToDefault
+			&& (!!results.values.help || (hasBuiltinVersion && !!results.values.version));
 		if (subcommands) {
 			if (knownSubcommand) {
-				([commandName] = argv);
+				([commandName] = rest);
 				if (mayMutateArgv) {
-					process.argv.splice(process.argv.indexOf(argv[0]), 1);
+					// `rest` is the tail of `argv`, which is the tail of `process.argv`
+					// unless an argument was filtered out of the middle of it; a leading
+					// option's value may equal the command name, so search from where the
+					// tail starts, rather than from the beginning
+					const at = process.argv.indexOf(rest[0], process.argv.length - rest.length);
+					process.argv.splice(at === -1 ? process.argv.indexOf(rest[0]) : at, 1);
 				}
 			} else if (routeToDefault) {
 				commandName = defaultCommand;
@@ -475,8 +560,11 @@ export default async function pargs(entrypointPath, obj) {
 				commandConfig = {
 					...inherited,
 					...subcommands[commandName],
-					args: knownSubcommand ? argv.slice(1) : argv,
+					args: knownSubcommand ? rest.slice(1) : forwardedArgs.concat(rest),
 					[kMutateArgv]: mayMutateArgv,
+					// so the subcommand's usage line names the command it is for
+					[kCommandPath]: (/** @type {Record<symbol, string[] | undefined>} */ (obj)[kCommandPath] ?? [])
+						.concat(commandName),
 					// only mark it inherited when the subcommand did not write its own - a
 					// clash it declared itself is still an error
 					[kInheritedVersion]: hasOwn(inherited, 'version') && !hasOwn(subcommands[commandName], 'version'),
@@ -487,8 +575,13 @@ export default async function pargs(entrypointPath, obj) {
 						&& { [kInheritedShorts]: true },
 				};
 				command = await pargs(entrypointPath, commandConfig);
-			} else {
-				const subcommand = argv[0];
+			} else if (
+				!rootRequested
+				&& (rest.length > 0 || !optionTokens.some(({ name }) => name !== 'help' && (hasUserVersion || name !== 'version')))
+			) {
+				// with no command at all, a root option the user did pass is the whole
+				// invocation (eg, `cli --setup`); a bare invocation is still an error
+				const [subcommand] = rest;
 				errors[errors.length] = `Error: unknown command${subcommand ? ` "${subcommand}"` : ''}`;
 			}
 		}
@@ -496,8 +589,28 @@ export default async function pargs(entrypointPath, obj) {
 		// `--help`/`--version` (and errors) apply at the invoked level: a routed
 		// default command is still "the root", so honor its flags with the root
 		// (command-listing) help rather than the default command's own help.
-		const helpValues = routeToDefault && command ? command.values : results.values;
-		const helpErrors = routeToDefault && command ? command.errors : errors;
+		// A reserved short the root kept, in a cluster with its own, still counts.
+		const helpValues = routeToDefault && command
+			? {
+				...command.values,
+				help: !!command.values.help || !!results.values.help,
+				version: !!command.values.version || !!results.values.version,
+			}
+			: results.values;
+		/** @type {(level: undefined | { errors: string[], command?: unknown }) => string[]} */
+		const chainErrors = (level) => (level
+			? level.errors.concat(chainErrors(/** @type {typeof level} */ (level.command)))
+			: []);
+		// read when `help()` runs, not now, since a caller may push its own; a root
+		// option's error is the root's to report, even when a command ran, and
+		// then so is every error the command's own `help()` would have reported
+		/** @type {() => string[]} */
+		const getHelpErrors = () => {
+			if (errors.length > 0) {
+				return errors.concat(chainErrors(command));
+			}
+			return routeToDefault && command ? command.errors : errors;
+		};
 		// the `version` policy is read from whichever level parsed the flag - the
 		// routed default command's *merged* config, so that what it inherited from
 		// the root counts, not just what it declared itself
@@ -513,6 +626,7 @@ export default async function pargs(entrypointPath, obj) {
 			// `options || {}`, not a defaulted parameter, so that passing the `null`
 			// a `promise.then(help)` would hand it is not a crash
 			const { exit = true } = options || {};
+			const helpErrors = getHelpErrors();
 			if (helpBuiltinVersion && helpValues.version) {
 				const version = typeof helpVersionConfig === 'string'
 					? helpVersionConfig
@@ -552,13 +666,16 @@ export default async function pargs(entrypointPath, obj) {
 			errors,
 			...results,
 			...command && {
-				help: routeToDefault ? help : command.help,
+				/** @type {typeof help} */
+				help: (options) => (routeToDefault || rootRequested || errors.length > 0
+					? help(options)
+					: command.help(options)),
 				command: {
 					name: commandName,
 					...command,
 				},
 			},
-			...obj.tokens && { tokens: normalizing ? scrubBareTokens(tokens) : tokens },
+			...obj.tokens && { tokens: reindex(normalizing ? scrubBareTokens(tokens) : tokens) },
 		};
 	} catch (e) {
 		const fakeErrors = [`Error: ${!!e && typeof e === 'object' && 'message' in e && e.message}`];
@@ -618,7 +735,7 @@ export default async function pargs(entrypointPath, obj) {
 					: {},
 				positionals: partial ? loosePositionals : [],
 				errors: fakeErrors,
-				...obj.tokens && { tokens: normalizing ? scrubBareTokens(tokens) : tokens },
+				...obj.tokens && { tokens: reindex(normalizing ? scrubBareTokens(tokens) : tokens) },
 			};
 		}
 		throw e;
