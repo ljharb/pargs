@@ -1487,6 +1487,28 @@ test('getVersion - empty string when no package.json provides a version', async 
 	t.end();
 });
 
+test('pargs - `--version` with no version found prints an empty line', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'cli.mjs');
+	await Promise.all([
+		writeFile(entrypoint, '// test file'),
+		writeFile(join(testDir, 'package.json'), '{}'),
+	]);
+
+	const result = await pargs(entrypoint, { args: ['--version'] });
+
+	const logCapture = t.capture(console, 'log');
+	const handled = await result.help({ exit: false });
+	const logs = logCapture().map((call) => call.args.join(' '));
+
+	t.equal(handled, 'version', 'help() reports it handled `--version`');
+	t.deepEqual(logs, [''], 'prints no `v` prefix with no version');
+
+	t.end();
+});
+
 test('pargs - subcommands validation', async (t) => {
 	try {
 		// @ts-expect-error
