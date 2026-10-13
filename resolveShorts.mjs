@@ -10,6 +10,10 @@ const { isArray } = Array;
 // letters itself, so a collision with its own options is not a config error
 export const kInheritedShorts = Symbol('pargs: `shorts` was inherited');
 
+/** @import { PargsConfig } from './types.d.mts' */
+/** @typedef {PargsConfig & { [kInheritedShorts]?: boolean }} ShortsInput */
+
+/** @type {readonly ('help' | 'version')[]} */
 const reserved = ['help', 'version'];
 
 const autoShorts = {
@@ -20,7 +24,7 @@ const autoShorts = {
 // Resolve the short flags for the reserved `--help`/`--version`. `shorts: true`
 // requests the conventional `-h`/`-V` and yields silently to any letter an
 // option already claims; an explicitly requested letter that collides throws.
-/** @type {(config: any) => { help: string | false, version: string | false }} */
+/** @type {(config: ShortsInput) => { help: string | false, version: string | false }} */
 export default function resolveShorts(config) {
 	const { shorts } = config;
 	if (typeof shorts === 'undefined' || shorts === false) {
@@ -33,7 +37,7 @@ export default function resolveShorts(config) {
 	}
 
 	const requested = auto ? autoShorts : shorts;
-	const unknown = keys(requested).filter((key) => !reserved.includes(key));
+	const unknown = keys(requested).filter((key) => !(/** @type {readonly string[]} */ (reserved)).includes(key));
 	if (unknown.length > 0) {
 		throw new TypeError(`Error: \`shorts\` may only contain \`help\` and \`version\`; got ${unknown.map((x) => `\`${x}\``).join(', ')}`);
 	}
@@ -44,8 +48,8 @@ export default function resolveShorts(config) {
 	const claimed = {};
 	entries(options).forEach(([name, option]) => {
 		// `parseArgs` resolves a duplicated short to the first declaration
-		if (option && typeof (/** @type {any} */ (option).short) === 'string' && !hasOwn(claimed, /** @type {any} */ (option).short)) {
-			claimed[/** @type {any} */ (option).short] = name;
+		if (option && typeof option.short === 'string' && !hasOwn(claimed, option.short)) {
+			claimed[option.short] = name;
 		}
 	});
 

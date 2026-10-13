@@ -24,6 +24,7 @@ const {
  * @import {
  *   OptionToken,
  *   PargsConfig,
+ *   PargsOptionConfig,
  *   PargsParsed,
  *   ParseArgsConfig,
  * } from './types.d.mts'
@@ -39,7 +40,8 @@ const kInheritedVersion = Symbol('pargs: `version` was inherited');
 
 // Swap the internal sentinel back out for what the config asked a bare
 // occurrence to mean, so it is never observable from outside.
-/** @type {(bare: unknown, value: unknown) => unknown} */
+/** @typedef {string | boolean | (string | boolean)[] | undefined} ParsedValue */
+/** @type {(bare: true | string, value: ParsedValue) => ParsedValue} */
 function replaceBareValue(bare, value) {
 	if (isArray(value)) {
 		// a bare occurrence contributes nothing to a `multiple` option, unless
@@ -55,7 +57,7 @@ function replaceBareValue(bare, value) {
 // Salvage what can be salvaged from a loose (`strict: false`) reparse after a
 // fatal parse error: keep only declared options whose parsed value still
 // matches the declared type, applying the same coercion the strict path does.
-/** @type {(schema: { normalized: Record<string, any>, options: Record<string, any>, bares: Record<string, unknown> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
+/** @type {(schema: { normalized: NonNullable<ParseArgsConfig['options']>, options: Readonly<Record<string, PargsOptionConfig>>, bares: Record<string, unknown> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
 function partialValues(schema, looseValues) {
 	const {
 		normalized,
@@ -78,15 +80,18 @@ function partialValues(schema, looseValues) {
 		// `normalizedOptions` has already rewritten `enum`/`number`/`integer` to
 		// `'string'`, so the declared type comes off the original config - except
 		// for the injected `help`/`version`, which only exist in the normalized one
-		const { type } = options[key] ?? normalized[key];
+		const declared = hasOwn(options, key) ? options[key] : null;
+		const { type } = declared ?? normalized[key];
 		const typesMatch = type === 'boolean'
 			? list.every((v) => typeof v === 'boolean')
 			: list.every((v) => typeof v === 'string');
 		if (!typesMatch) {
 			return [];
 		}
-		if (type === 'enum') {
-			return list.every((v) => options[key].choices.includes(v)) ? [[key, value]] : [];
+		if (declared?.type === 'enum') {
+			/** @type {{ choices: readonly unknown[] }} */
+			const { choices } = declared;
+			return list.every((v) => choices.includes(v)) ? [[key, value]] : [];
 		}
 		if (type === 'number' || type === 'integer') {
 			const nums = list.map(Number);
@@ -221,13 +226,17 @@ export default async function pargs(entrypointPath, obj) {
 	const numbers = { __proto__: null };
 
 	/** @type {Record<string, true | string>} */
-	const bares = /** @type {never} */ ({ __proto__: null });
+	// @ts-expect-error __proto__
+	const bares = { __proto__: null };
 
-	/** @type {[string, any][]} */
+	/** @type {[string, PargsOptionConfig][]} */
 	const optsEntries = entries(passedConfig.options ?? {});
 
-	/** @type {NonNullable<ParseArgsConfig['options']> & { help: { default: false, type: 'boolean' } }} */
-	const normalizedOptions = fromEntries(optsEntries.flatMap(([key, value]) => {
+	/** @typedef {NonNullable<ParseArgsConfig['options']>} ParseArgsOptions */
+	/** @typedef {(entry: [string, PargsOptionConfig]) => [string, ParseArgsOptions[string]][]} Normalize */
+	/** @typedef {ParseArgsOptions & { help: { default: false, type: 'boolean' } }} NormalizedOptions */
+	/** @type {Normalize} */
+	const normalize = ([key, value]) => {
 		if (typeof value.negation !== 'undefined' && value.negation !== 'exclusive' && value.negation !== 'last-wins') {
 			throw new TypeError(`Error: \`negation\` must be either "exclusive" or "last-wins"; \`${key}\` is invalid`);
 		}
@@ -258,7 +267,8 @@ export default async function pargs(entrypointPath, obj) {
 			bares[key] = true;
 		}
 
-		if (value.variadic && value.multiple === false) {
+		// the types already rule this out, but a JS caller's config is not checked
+		if (value.variadic && (/** @type {{ multiple?: boolean }} */ (value)).multiple === false) {
 			throw new TypeError(`Error: \`variadic\` implies \`multiple\`, so \`multiple: false\` is not allowed; \`${key}\` is invalid`);
 		}
 
@@ -268,7 +278,8 @@ export default async function pargs(entrypointPath, obj) {
 			? {
 				...value,
 				multiple: true,
-				...'default' in value && { default: [].concat(/** @type {never} */ (value.default)) },
+				// a `number`/`integer` default is converted to strings below
+				...'default' in value && { default: /** @type {string[]} */ (/** @type {unknown[]} */ ([]).concat(value.default)) },
 			}
 			: value;
 
@@ -278,21 +289,26 @@ export default async function pargs(entrypointPath, obj) {
 			}
 
 			enums[key] = option;
-			return [[key, { ...option, type: 'string' }]];
+			return [[key, { ...option, type: /** @type {const} */ ('string') }]];
 		}
 
 		if (option.type === 'number' || option.type === 'integer') {
 			numbers[key] = option.type;
-			const converted = { ...option, type: 'string' };
-			if ('default' in converted) {
-				const def = [].concat(converted.default).map(String);
-				converted.default = converted.multiple ? def : def[0];
+			// only an own, enumerable `default` survives the spread, so test that copy
+			const stringOption = { ...option, type: /** @type {const} */ ('string') };
+			const { default: numeric, ...converted } = stringOption;
+			if ('default' in stringOption) {
+				const def = /** @type {unknown[]} */ ([]).concat(numeric).map(String);
+				return [[key, { ...converted, default: converted.multiple ? def : def[0] }]];
 			}
 			return [[key, converted]];
 		}
 
 		return [[key, option]];
-	}).concat([
+	};
+
+	// `help` is always appended, which `fromEntries` can not see
+	const normalizedOptions = /** @type {NormalizedOptions} */ (fromEntries(optsEntries.flatMap(normalize).concat([
 		[
 			'help',
 			{
@@ -310,7 +326,7 @@ export default async function pargs(entrypointPath, obj) {
 				...shorts.version && { short: shorts.version },
 			},
 		],
-	] : []));
+	] : [])));
 
 	/** @type {ParseArgsConfig & { tokens: true, allowNegative: true, strict: true, options: typeof normalizedOptions, args: readonly string[] }} */
 	const newObj = {
@@ -389,7 +405,7 @@ export default async function pargs(entrypointPath, obj) {
 			// only ever rewrite a key the user actually passed; creating one here
 			// would make an unpassed option indistinguishable from a passed one
 			if (hasOwn(results.values, key)) {
-				results.values[key] = /** @type {never} */ (replaceBareValue(bare, results.values[key]));
+				results.values[key] = replaceBareValue(bare, results.values[key]);
 			}
 		});
 
@@ -559,7 +575,9 @@ export default async function pargs(entrypointPath, obj) {
 			if (partial) {
 				entries(bares).forEach(([key, bare]) => {
 					if (hasOwn(looseValues, key)) {
-						looseValues[key] = /** @type {never} */ (replaceBareValue(bare, looseValues[key]));
+						/** @type {Record<string, ParsedValue>} */
+						const loose = looseValues;
+						loose[key] = replaceBareValue(bare, loose[key]);
 					}
 				});
 			}

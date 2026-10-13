@@ -88,9 +88,9 @@ type VariadicKey =
  * runtime.
  */
 type NoArityKeys = {
-	greedy?: never;
-	optionalValue?: never;
-	variadic?: never;
+	greedy?: undefined;
+	optionalValue?: undefined;
+	variadic?: undefined;
 };
 
 export type PargsOptionConfig =
@@ -202,7 +202,13 @@ type OptionValueType<O extends PargsOptionConfig> =
 		: ListValueType<O>;
 
 // Check if an option has a default value
-type HasDefault<O> = O extends { default: any } ? true : false;
+type HasDefault<O> = O extends { default: unknown } ? true : false;
+
+// the keys of the options that declare a `default`
+type DefaultedKeys<Options> = Extract<
+	keyof Options,
+	{ [K in keyof Options]-?: HasDefault<Options[K]> extends true ? K : undefined }[keyof Options]
+>;
 
 // Did the config declare its own `version` option? Checked by key presence, since
 // the declaration is optional and so does not extend `{ version: unknown }`.
@@ -212,7 +218,7 @@ type HasVersionOption<T> = T extends { options: infer O }
 
 // `help` is always added. `version` is too, unless the config opted out of it, or
 // declared its own `version` option - in which case that option's own type governs,
-// and intersecting `{ version: boolean }` on top would reduce `values` to `never`.
+// and intersecting `{ version: boolean }` on top would leave `values` no possible value.
 type ReservedValues<T> = { help: boolean } & (
 	T extends { version: false }
 		? {}
@@ -226,10 +232,10 @@ type ValuesFromOptions<Options extends Record<string, PargsOptionConfig> | undef
 	Options extends Record<string, PargsOptionConfig>
 		? {
 			// Required options (have default)
-			-readonly [K in keyof Options as HasDefault<Options[K]> extends true ? K : never]: OptionValueType<Options[K]>;
+			-readonly [K in DefaultedKeys<Options>]: OptionValueType<Options[K]>;
 		} & {
 			// Optional options (no default)
-			-readonly [K in keyof Options as HasDefault<Options[K]> extends true ? never : K]?: OptionValueType<Options[K]>;
+			-readonly [K in Exclude<keyof Options, DefaultedKeys<Options>>]?: OptionValueType<Options[K]>;
 		} & ReservedValues<T>
 		: ReservedValues<T>;
 

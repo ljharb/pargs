@@ -15,7 +15,18 @@ import generateHelp from '../generateHelp.mjs';
 import getHelpText, { getVersion } from '../getHelpText.mjs';
 import normalizeArgs, { needsNormalizing } from '../normalizeArgs.mjs';
 
+/** @import { PargsConfig, PargsOptionConfig, PargsParsed } from '../types.d.mts' */
+
+// the result of a config whose options are only known at runtime
+/** @typedef {PargsParsed<PargsConfig & { options: Record<string, PargsOptionConfig> }>} DynamicResult */
+
 const filename = fileURLToPath(import.meta.url);
+
+// a config the types reject, to check that it is rejected at runtime too
+/** @type {(config: unknown) => PargsConfig} */
+function untyped(config) {
+	return /** @type {PargsConfig} */ (config);
+}
 
 /** @type {(dirPath: string, removeCallback: Function) => () => void} */
 function emptyFirst(dirPath, removeCallback) {
@@ -338,7 +349,7 @@ test('pargs - `version` config', async (t) => {
 	t.test('a user-declared `version` option leaves `values` usable', async (st) => {
 		// also a compile-time guard: if `ReservedValues` starts intersecting
 		// `{ version: boolean }` on top of the declared option again, `values`
-		// reduces to `never` and these reads stop type-checking
+		// has no possible value and these reads stop type-checking
 		const result = await pargs(entrypoint, {
 			args: ['--version', 'v9', '--other'],
 			options: {
@@ -364,7 +375,7 @@ test('pargs - `shorts`', async (t) => {
 	/** @type {(st: import('tape').Test, config: Record<string, unknown>, re: RegExp, msg: string) => Promise<void>} */
 	async function rejects(st, config, re, msg) {
 		try {
-			await pargs(entrypoint, /** @type {never} */ (config));
+			await pargs(entrypoint, untyped(config));
 			st.fail(`should have thrown: ${msg}`);
 		} catch (e) {
 			st.ok(e instanceof TypeError, `${msg}: throws a TypeError`);
@@ -610,7 +621,7 @@ test('pargs - `usageOnError`', async (t) => {
 	/** @type {(config: Record<string, unknown>) => Promise<{ out: string[], err: string[] }>} */
 	async function streams(config) {
 		const result = /** @type {{ help: () => Promise<unknown> }} */ (
-			/** @type {unknown} */ (await pargs(entrypoint, /** @type {never} */ (config)))
+			/** @type {unknown} */ (await pargs(entrypoint, untyped(config)))
 		);
 		/** @type {string[]} */
 		const out = [];
@@ -622,7 +633,7 @@ test('pargs - `usageOnError`', async (t) => {
 		const realExitCode = process.exitCode;
 		console.log = (...args) => { out[out.length] = args.join(' '); };
 		console.error = (...args) => { err[err.length] = args.join(' '); };
-		process.exit = /** @type {never} */ (() => {
+		process.exit = /** @type {typeof process.exit} */ (() => {
 			throw new Error('EXIT');
 		});
 		try {
@@ -760,7 +771,7 @@ test('pargs - `usageOnError`', async (t) => {
 
 	t.test('an invalid value throws', async (st) => {
 		try {
-			await pargs(entrypoint, { usageOnError: /** @type {never} */ ('nope') });
+			await pargs(entrypoint, untyped({ usageOnError: 'nope' }));
 			st.fail('should have thrown');
 		} catch (e) {
 			st.ok(e instanceof TypeError, 'throws a TypeError');
@@ -782,7 +793,7 @@ test('pargs - `help({ exit })`', async (t) => {
 	/** @type {(config: Record<string, unknown>, helpOptions?: unknown) => Promise<{ handled: unknown, exits: number }>} */
 	async function run(config, helpOptions) {
 		const result = /** @type {{ help: (o?: unknown) => Promise<unknown> }} */ (
-			/** @type {unknown} */ (await pargs(entrypoint, /** @type {never} */ (config)))
+			/** @type {unknown} */ (await pargs(entrypoint, untyped(config)))
 		);
 		let exits = 0;
 		const realLog = console.log;
@@ -791,7 +802,7 @@ test('pargs - `help({ exit })`', async (t) => {
 		const realExitCode = process.exitCode;
 		console.log = () => {};
 		console.error = () => {};
-		process.exit = /** @type {never} */ (() => {
+		process.exit = /** @type {typeof process.exit} */ (() => {
 			exits += 1;
 			throw new Error('EXIT');
 		});
@@ -859,7 +870,7 @@ test('pargs - `help({ exit })`', async (t) => {
 		process.exitCode = 0;
 		console.log = () => {};
 		console.error = () => {};
-		process.exit = /** @type {never} */ (() => {
+		process.exit = /** @type {typeof process.exit} */ (() => {
 			throw new Error('should not exit');
 		});
 		let captured;
@@ -904,7 +915,7 @@ test('pargs - `greedy`', async (t) => {
 		plain: { type: /** @type {'string'} */ ('string'), short: 'p' },
 	};
 
-	/** @type {(args: string[]) => Promise<any>} */
+	/** @type {(args: string[]) => Promise<DynamicResult>} */
 	const parse = (args) => pargs(entrypoint, { args, allowPositionals: true, options });
 
 	t.test('consumes a dash-leading value', async (st) => {
@@ -1030,8 +1041,8 @@ test('pargs - `optionalValue`', async (t) => {
 		return false;
 	}
 
-	/** @type {(args: string[], options: Record<string, unknown>) => Promise<any>} */
-	const parse = (args, options) => pargs(entrypoint, /** @type {never} */ ({
+	/** @type {(args: string[], options: Record<string, unknown>) => Promise<DynamicResult>} */
+	const parse = (args, options) => pargs(entrypoint, untyped({
 		args,
 		allowPositionals: true,
 		options,
@@ -1223,7 +1234,7 @@ test('pargs - `optionalValue`', async (t) => {
 		/** @type {(options: Record<string, unknown>, re: RegExp, msg: string) => Promise<void>} */
 		async function rejects(options, re, msg) {
 			try {
-				await pargs(entrypoint, /** @type {never} */ ({ options }));
+				await pargs(entrypoint, untyped({ options }));
 				st.fail(`should have thrown: ${msg}`);
 			} catch (e) {
 				st.match(/** @type {Error} */ (e).message, re, msg);
@@ -1240,7 +1251,7 @@ test('pargs - `optionalValue`', async (t) => {
 			'`greedy` would always take the next token, so the two contradict each other',
 		);
 		// and statically, where `rejects` casting the type away can not show it
-		/** @type {import('../types.d.mts').PargsOptionConfig} */
+		/** @type {PargsOptionConfig} */
 		// @ts-expect-error `optionalValue` is not allowed on a boolean option
 		const invalid = { type: 'boolean', optionalValue: true };
 		st.ok(invalid, 'the same config is also a type error');
@@ -1274,8 +1285,8 @@ test('pargs - `variadic`', async (t) => {
 	const entrypoint = join(testDir, 'test.mjs');
 	await writeFile(entrypoint, '// test file');
 
-	/** @type {(args: string[], extra?: Record<string, unknown>, rest?: Record<string, unknown>) => Promise<any>} */
-	const parse = (args, extra, rest) => pargs(entrypoint, /** @type {never} */ ({
+	/** @type {(args: string[], extra?: Record<string, unknown>, rest?: Record<string, unknown>) => Promise<DynamicResult>} */
+	const parse = (args, extra, rest) => pargs(entrypoint, untyped({
 		args,
 		allowPositionals: true,
 		...rest,
@@ -2449,6 +2460,23 @@ test('pargs - number type validation', async (t) => {
 		});
 		st.equal(result.values.port, 3e3, 'coerces numeric default value to number');
 		st.equal(result.errors.length, 0, 'no errors with numeric default');
+	});
+
+	t.test('number with a `default` that is not its own enumerable property', async (st) => {
+		const inherited = { __proto__: { default: 5 }, type: 'number' };
+		const hidden = { type: 'number' };
+		Object.defineProperty(hidden, 'default', { value: 7 });
+
+		/** @type {DynamicResult[]} */
+		const results = await Promise.all([inherited, hidden].map((port) => pargs(entrypoint, untyped({
+			args: [],
+			options: { port },
+		}))));
+		results.forEach((result, i) => {
+			const label = ['an inherited', 'a non-enumerable'][i];
+			st.equal(result.values.port, undefined, `${label} \`default\` is ignored`);
+			st.deepEqual(result.errors, [], `${label} \`default\` is not an error`);
+		});
 	});
 
 	t.test('number with multiple and numeric defaults (not provided)', async (st) => {

@@ -7,7 +7,7 @@ import generateHelp from './generateHelp.mjs';
 
 const { entries } = Object;
 
-/** @type {(path: string) => Promise<any>} */
+/** @type {(path: string) => Promise<null | { bin?: unknown, name?: unknown, version?: unknown }>} */
 async function readJSON(path) {
 	try {
 		return JSON.parse(await readFile(path, 'utf-8'));
@@ -18,7 +18,7 @@ async function readJSON(path) {
 
 // Resolve a command name from a single `package.json`: the `bin` entry whose
 // path is the entrypoint, else the (unscoped) package name, else null.
-/** @type {(dir: string, pkg: any, realEntrypointPath: string) => Promise<string | null>} */
+/** @type {(dir: string, pkg: { bin?: unknown, name?: unknown }, realEntrypointPath: string) => Promise<string | null>} */
 async function nameFromPkg(dir, pkg, realEntrypointPath) {
 	if (pkg.bin && typeof pkg.bin === 'object') {
 		const matches = await Promise.all(entries(pkg.bin).map(async ([command, relPath]) => {

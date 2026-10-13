@@ -14,14 +14,19 @@ const {
 // only arrive through a programmatic `args`, which is rejected below.
 export const bareValue = '\0pargs:bare\0';
 
+// an option as `parseArgs` is handed it, plus the arity keys only pargs reads
+/** @typedef {{ type: string, short?: string, multiple?: boolean, greedy?: boolean, optionalValue?: boolean | string, variadic?: boolean }} ArityOptionConfig */
+/** @typedef {Readonly<Record<string, ArityOptionConfig>>} ArityOptions */
+/** @typedef {NonNullable<ReturnType<typeof import('util').parseArgs>['tokens']>[number]} Token */
+
 // an `optionalValue` of `''` is a real value the config asked for, so it can not
 // be tested for truthiness
-/** @type {(config: any) => boolean} */
+/** @type {(config: ArityOptionConfig) => boolean} */
 function hasOptionalValue(config) {
 	return config.optionalValue === true || typeof config.optionalValue === 'string';
 }
 
-/** @type {(config: any) => boolean} */
+/** @type {(config: ArityOptionConfig) => boolean} */
 function hasArity(config) {
 	return !!config.greedy || hasOptionalValue(config) || !!config.variadic;
 }
@@ -29,7 +34,7 @@ function hasArity(config) {
 // A bare occurrence of an `optionalValue: true` option carries the sentinel
 // through `parseArgs`; put the tokens back the way parseArgs reports a
 // valueless option, so it never reaches a consumer.
-/** @type {(tokens: readonly any[]) => any[]} */
+/** @type {(tokens: readonly Token[]) => Token[]} */
 export function scrubBareTokens(tokens) {
 	return tokens.map((token) => (
 		token.kind === 'option' && token.value === bareValue
@@ -42,7 +47,7 @@ export function scrubBareTokens(tokens) {
 	));
 }
 
-/** @type {(options: Record<string, any>) => boolean} */
+/** @type {(options: ArityOptions) => boolean} */
 export function needsNormalizing(options) {
 	return entries(options).some(([, config]) => hasArity(config));
 }
@@ -56,7 +61,7 @@ function isValueLike(arg) {
 // The long or short option `arg` names, when it is written bare - no `=`, no
 // attached short value - and is one we know. `'--'` is handled by the caller,
 // so a long option always has a name here.
-/** @type {(arg: string, options: Record<string, any>, shorts: Record<string, string>) => string | null} */
+/** @type {(arg: string, options: ArityOptions, shorts: Record<string, string>) => string | null} */
 function bareOptionName(arg, options, shorts) {
 	if (arg.startsWith('--')) {
 		const name = arg.slice(2);
@@ -72,7 +77,7 @@ function bareOptionName(arg, options, shorts) {
 	return at === chars.length - 1 && hasOwn(shorts, chars[at]) ? shorts[chars[at]] : null;
 }
 
-/** @type {(state: { out: string[], args: string[], i: number, name: string, config: any }) => number} */
+/** @type {(state: { out: string[], args: string[], i: number, name: string, config: ArityOptionConfig }) => number} */
 function pushOption(state) {
 	const {
 		out,
@@ -126,7 +131,7 @@ function pushOption(state) {
 	return j;
 }
 
-/** @type {(args: string[], options: Record<string, any>) => string[]} */
+/** @type {(args: string[], options: ArityOptions) => string[]} */
 export default function normalizeArgs(args, options) {
 	if (args.some((arg) => arg.includes('\0'))) {
 		throw new TypeError('Error: arguments may not contain a NUL byte');
