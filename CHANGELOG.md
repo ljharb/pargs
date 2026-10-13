@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.6.1...v2.0.0) - 2025-10-24
+## [v2.0.0](https://github.com/ljharb/pargs/compare/v1.7.0...v2.0.0) - 2025-10-24
+
+## [v1.7.0](https://github.com/ljharb/pargs/compare/v1.6.1...v1.7.0) - 2026-10-13
+
+### Commits
+
+- [New] allow root `options` alongside `subcommands` [`cfad414`](https://github.com/ljharb/pargs/commit/cfad414623a5140e0d4a71de2495cc7663c3cb45)
+- [types] remove `any` and `never` [`448ffd7`](https://github.com/ljharb/pargs/commit/448ffd794d193ff1f5d5f6303c19176e2fcde02b)
+- [Robustness] reduce primordials usage [`cd57265`](https://github.com/ljharb/pargs/commit/cd572656c0fb4bba3f85a2d2d9dfbdcfefb30112)
+- [Tests] cover `--version` with no version found [`ef30650`](https://github.com/ljharb/pargs/commit/ef30650491c61a45d83f06bcca5dd0581d8e93ad)
+- [Dev Deps] update `@ljharb/eslint-config`, `@types/node`, `eslint` [`33b37f6`](https://github.com/ljharb/pargs/commit/33b37f6058369c380c72358a362d057a931f0498)
 
 ## [v1.6.1](https://github.com/ljharb/pargs/compare/v1.6.0...v1.6.1) - 2026-09-30
 
