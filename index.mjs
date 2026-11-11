@@ -65,6 +65,12 @@ function isOptionToken(token) {
 	return token.kind === 'option';
 }
 
+// `Number` reads an empty or all-whitespace string as `0`, but that is no number at all
+/** @type {(value: unknown) => number} */
+function toNumber(value) {
+	return typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+}
+
 /** @type {(key: string) => [string, { type: 'boolean' }]} */
 function negationOption(key) {
 	return [`no-${key}`, { type: 'boolean' }];
@@ -115,7 +121,7 @@ function partialValues(schema, looseValues) {
 			return list.every((v) => choices.includes(v)) ? [[key, value]] : [];
 		}
 		if (type === 'number' || type === 'integer') {
-			const nums = list.map(Number);
+			const nums = list.map(toNumber);
 			const valid = nums.every((num) => Number.isFinite(num) && (type !== 'integer' || Number.isInteger(num)));
 			return valid ? [[key, multiple ? nums : nums[0]]] : [];
 		}
@@ -550,7 +556,7 @@ export default async function pargs(entrypointPath, obj) {
 				if (bare && v === bareValue) {
 					return v;
 				}
-				const num = Number(v);
+				const num = toNumber(v);
 				if (!Number.isFinite(num) || (type === 'integer' && !Number.isInteger(num))) {
 					allValid = false;
 				}

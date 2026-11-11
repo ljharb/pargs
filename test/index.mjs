@@ -2784,6 +2784,22 @@ test('pargs - number type validation', async (t) => {
 		);
 	});
 
+	t.test('an empty or all-whitespace value is not a valid number', async (st) => {
+		const results = await Promise.all(['--port=', '--port= ', '--port=\t\n'].map((arg) => pargs(entrypoint, {
+			args: [arg],
+			options: { port: { type: 'number' } },
+		})));
+		results.forEach((result, i) => {
+			st.deepEqual(result.errors, ['Error: Invalid number value for option "port"'], `value ${i} is rejected`);
+		});
+
+		const list = await pargs(entrypoint, {
+			args: ['--port=80', '--port='],
+			options: { port: { type: 'number', multiple: true } },
+		});
+		st.deepEqual(list.errors, ['Error: Invalid number value for option "port"'], 'an empty element of a list is rejected');
+	});
+
 	t.test('number with default (not provided)', async (st) => {
 		st.intercept(process, 'argv', { value: [process.execPath, entrypoint] });
 		const result = await pargs(entrypoint, {
@@ -2917,6 +2933,16 @@ test('pargs - integer type validation', async (t) => {
 			result.errors.some((e) => e.includes('Invalid integer value')),
 			'error mentions invalid integer',
 		);
+	});
+
+	t.test('an empty or all-whitespace value is not a valid integer', async (st) => {
+		const results = await Promise.all(['--count=', '--count= '].map((arg) => pargs(entrypoint, {
+			args: [arg],
+			options: { count: { type: 'integer' } },
+		})));
+		results.forEach((result, i) => {
+			st.deepEqual(result.errors, ['Error: Invalid integer value for option "count"'], `value ${i} is rejected`);
+		});
 	});
 
 	t.test('negative integer is valid', async (st) => {
@@ -3370,6 +3396,13 @@ test('pargs - `partialValues`', async (t) => {
 			options: { count: { type: 'integer' } },
 		});
 		st.equal(goodInteger.values.count, 2, 'a whole value survives on `integer`');
+
+		const empty = await pargs(entrypoint, {
+			args: ['--count=', '--nope'],
+			partialValues: true,
+			options: { count: { type: 'integer' } },
+		});
+		st.equal('count' in empty.values, false, 'an empty value is dropped');
 	});
 
 	t.test('applies `enum` choices', async (st) => {
