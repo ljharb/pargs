@@ -91,11 +91,31 @@ type NoArityKeys = {
 	greedy?: undefined;
 	optionalValue?: undefined;
 	variadic?: undefined;
+	negatable?: undefined;
 };
+
+/**
+ * A negation is a `false` in place of the value, which no list admits, so
+ * `negatable` is rejected alongside `multiple` and `variadic` here as well as
+ * at runtime.
+ */
+type NegatableKey =
+	| {
+		/**
+		 * Also accept `--no-<name>`, which sets the value to `false`. Subject to
+		 * `negation`, exactly as a boolean option's `--no-` form is.
+		 */
+		negatable?: false | undefined;
+	}
+	| {
+		negatable: true;
+		multiple?: false;
+		variadic?: false;
+	};
 
 export type PargsOptionConfig =
 	| (BooleanOptionConfig & OptionMeta & NoArityKeys)
-	| (ValueOptionConfig & OptionMeta & ArityKeys & VariadicKey);
+	| (ValueOptionConfig & OptionMeta & ArityKeys & VariadicKey & NegatableKey);
 
 export type PositionalConfig = {
 	name: string;
@@ -196,10 +216,16 @@ type ListValueType<O extends PargsOptionConfig> =
 
 // `optionalValue: true` adds `true` for the bare form; a string `optionalValue`
 // is injected as an ordinary value, so it does not widen the type
-type OptionValueType<O extends PargsOptionConfig> =
+type BareValueType<O extends PargsOptionConfig> =
 	O extends { optionalValue: true }
 		? ListValueType<O> | true
 		: ListValueType<O>;
+
+// `negatable: true` adds `false` for the `--no-` form
+type OptionValueType<O extends PargsOptionConfig> =
+	O extends { negatable: true }
+		? BareValueType<O> | false
+		: BareValueType<O>;
 
 // Check if an option has a default value
 type HasDefault<O> = O extends { default: unknown } ? true : false;

@@ -57,15 +57,29 @@ function replaceBareValue(bare, value) {
 	return value === bareValue ? bare : value;
 }
 
+/**
+ * @param {{ kind: string }} token
+ * @returns {token is OptionToken}
+ */
+function isOptionToken(token) {
+	return token.kind === 'option';
+}
+
+/** @type {(key: string) => [string, { type: 'boolean' }]} */
+function negationOption(key) {
+	return [`no-${key}`, { type: 'boolean' }];
+}
+
 // Salvage what can be salvaged from a loose (`strict: false`) reparse after a
 // fatal parse error: keep only declared options whose parsed value still
 // matches the declared type, applying the same coercion the strict path does.
-/** @type {(schema: { normalized: NonNullable<ParseArgsConfig['options']>, options: Readonly<Record<string, PargsOptionConfig>>, bares: Record<string, unknown> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
+/** @type {(schema: { normalized: NonNullable<ParseArgsConfig['options']>, options: Readonly<Record<string, PargsOptionConfig>>, bares: Record<string, unknown>, negatables: Record<string, unknown> }, looseValues: Record<string, unknown>) => Record<string, unknown>} */
 function partialValues(schema, looseValues) {
 	const {
 		normalized,
 		options,
 		bares,
+		negatables,
 	} = schema;
 	return fromEntries(entries(looseValues).flatMap(([key, value]) => {
 		if (!hasOwn(normalized, key)) {
@@ -76,6 +90,10 @@ function partialValues(schema, looseValues) {
 
 		// a bare occurrence already stands in for its declared type, so it is kept without being measured against it
 		if (hasOwn(bares, key) && list.every((v) => v === bares[key])) {
+			return [[key, value]];
+		}
+
+		if (hasOwn(negatables, key) && value === false) {
 			return [[key, value]];
 		}
 
@@ -226,6 +244,10 @@ export default async function pargs(entrypointPath, obj) {
 	// @ts-expect-error __proto__
 	const bares = { __proto__: null };
 
+	/** @type {Record<string, PargsOptionConfig>} */
+	// @ts-expect-error __proto__
+	const negatables = { __proto__: null };
+
 	/** @type {[string, PargsOptionConfig][]} */
 	const optsEntries = entries(passedConfig.options ?? {});
 
@@ -262,6 +284,25 @@ export default async function pargs(entrypointPath, obj) {
 
 		if (value.optionalValue === true) {
 			bares[key] = true;
+		}
+
+		if (typeof value.negatable !== 'undefined' && typeof value.negatable !== 'boolean') {
+			throw new TypeError(`Error: \`negatable\` must be a boolean; \`${key}\` is invalid`);
+		}
+
+		if (value.type === 'boolean' && value.negatable) {
+			throw new TypeError(`Error: \`negatable\` is not allowed on a boolean option, which is always negatable; \`${key}\` is invalid`);
+		}
+
+		if (value.negatable) {
+			// a negation in a list would be a `false` element, which no list type admits
+			if (value.multiple || value.variadic) {
+				throw new TypeError(`Error: \`negatable\` can not be combined with \`multiple\` or \`variadic\`; \`${key}\` is invalid`);
+			}
+			if (optsEntries.some(([name]) => name === `no-${key}`)) {
+				throw new TypeError(`Error: \`negatable\` claims \`--no-${key}\`, which is already declared as an option; \`${key}\` is invalid`);
+			}
+			negatables[key] = value;
 		}
 
 		// the types already rule this out, but a JS caller's config is not checked
@@ -358,7 +399,7 @@ export default async function pargs(entrypointPath, obj) {
 					},
 				])),
 			{
-				negatable: new Set(optsEntries.filter(([, { type }]) => type === 'boolean').map(([key]) => key)),
+				negatable: new Set(optsEntries.filter(([key, { type }]) => type === 'boolean' || hasOwn(negatables, key)).map(([key]) => key)),
 				commands: new Set(keys(subcommands)),
 			},
 		)
@@ -386,7 +427,12 @@ export default async function pargs(entrypointPath, obj) {
 				? argsOf(leading.steps.filter((step) => !forwarded.includes(step)))
 				: argv.slice(0, leading.count + 1)
 			: argv,
-		options: normalizedOptions,
+		// `parseArgs` only accepts `--no-x` for a boolean `x`, but it does accept it
+		// for a declared `no-x`; the value is then decided from the tokens alone
+		options: {
+			...normalizedOptions,
+			...fromEntries(keys(negatables).map(negationOption)),
+		},
 		tokens: true,
 		allowNegative: true,
 		allowPositionals: !!subcommands || typeof passedConfig.allowPositionals !== 'undefined',
@@ -423,11 +469,51 @@ export default async function pargs(entrypointPath, obj) {
 		: tokens);
 
 	try {
+		// the hidden `no-x` would let `parseArgs` take `--no-no-x` as its negation,
+		// but that is no more an option than it is for a boolean `x`; so `parseArgs`
+		// is left to reject it as it would any unknown option, after reporting
+		// anything earlier in the argument list first
+		const doubled = keys(negatables).length > 0
+			? parseArgs({
+				...newObj,
+				strict: false,
+				allowPositionals: true,
+			}).tokens.filter(isOptionToken).find(({ rawName }) => rawName.startsWith('--no-no-')
+				&& hasOwn(negatables, rawName.slice('--no-no-'.length)))
+			: void undefined;
+		if (doubled) {
+			parseArgs({ ...newObj, args: newObj.args.slice(0, doubled.index) });
+			parseArgs({
+				args: [doubled.rawName],
+				allowPositionals: newObj.allowPositionals,
+				strict: true,
+			});
+		}
+
 		const { tokens, ...results } = parseArgs(newObj);
+
+		const optionTokens = tokens.filter(isOptionToken);
+
+		entries(negatables).forEach(([key, config]) => {
+			delete results.values[`no-${key}`];
+			const negatedName = `--no-${key}`;
+			const occurrences = optionTokens.filter((token) => token.name === key || token.rawName === negatedName);
+			const negations = occurrences.filter(({ rawName }) => rawName === negatedName).length;
+			if (negations === 0) {
+				return;
+			}
+			const negation = typeof config.negation === 'undefined' ? rootNegation : config.negation;
+			if (negation !== 'last-wins' && negations < occurrences.length) {
+				errors[errors.length] = `Error: Arguments \`--${key}\` and \`--no-${key}\` are mutually exclusive`;
+			}
+			if (occurrences[occurrences.length - 1].rawName === negatedName) {
+				results.values[key] = false;
+			}
+		});
 
 		entries(enums).forEach(([key, config]) => {
 			const value = results.values[key];
-			if (typeof value === 'undefined') {
+			if (typeof value === 'undefined' || (value === false && hasOwn(negatables, key))) {
 				return;
 			}
 
@@ -452,7 +538,7 @@ export default async function pargs(entrypointPath, obj) {
 		const coerced = results.values;
 		entries(numbers).forEach(([key, type]) => {
 			const value = results.values[key];
-			if (typeof value === 'undefined') {
+			if (typeof value === 'undefined' || (value === false && hasOwn(negatables, key))) {
 				return;
 			}
 			let allValid = true;
@@ -496,8 +582,6 @@ export default async function pargs(entrypointPath, obj) {
 				errors[errors.length] = `At least ${minPos} positional arguments required; got ${results.positionals.length}`;
 			}
 		}
-
-		const optionTokens = tokens.filter(/** @type {(token: typeof tokens[number]) => token is OptionToken} */ (token) => token.kind === 'option');
 
 		const bools = obj.options ? entries(obj.options).filter(([, { type }]) => type === 'boolean') : [];
 		const passedArgs = new Set(optionTokens.map(({ name, rawName }) => (rawName.startsWith('--no-') ? rawName.slice(2) : name)));
@@ -729,6 +813,7 @@ export default async function pargs(entrypointPath, obj) {
 							normalized: normalizedOptions,
 							options: passedConfig.options ?? {},
 							bares,
+							negatables,
 						},
 						looseValues,
 					)

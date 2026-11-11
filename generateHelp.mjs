@@ -150,7 +150,7 @@ export default function generateHelp(name, config) {
 			? routedOptions[key].short
 			: ownShort(key, value);
 		const short = letter ? `-${letter}, ` : '    ';
-		const flag = value.type === 'boolean' ? `--[no-]${key}` : `--${key}`;
+		const flag = value.type === 'boolean' || value.negatable ? `--[no-]${key}` : `--${key}`;
 		return /** @type {[string, string, string]} */ ([
 			value.group || (sharedGroup && hasOwn(routedOptions, key) ? sharedGroup : 'Options'),
 			`${short}${flag}${valuePlaceholder(value)}`,

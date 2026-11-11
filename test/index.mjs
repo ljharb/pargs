@@ -1806,6 +1806,350 @@ test('pargs - `negation`', async (t) => {
 	});
 });
 
+test('pargs - `negatable`', async (t) => {
+	const { name: testDir, removeCallback } = tmp.dirSync();
+	t.teardown(emptyFirst(testDir, removeCallback));
+
+	const entrypoint = join(testDir, 'test.mjs');
+
+	await writeFile(entrypoint, '// test file');
+
+	t.test('`--no-` sets a string option to `false`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.equal(result.values.limit === false, true, '`--no-limit` is `false`');
+		st.equal('no-limit' in result.values, false, 'no `no-limit` key in `values`');
+	});
+
+	t.test('the option still takes a value', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['-l', '5'],
+			options: { limit: { type: 'string', short: 'l', negatable: true } },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.equal(result.values.limit, '5', 'the value is unchanged');
+	});
+
+	t.test('an option that does not opt in has no `--no-` form', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit'],
+			options: { limit: { type: 'string' } },
+		});
+		st.deepEqual(result.errors, ["Error: Unknown option '--no-limit'"], '`--no-limit` is unknown');
+	});
+
+	t.test('both forms together is an error by default', async (st) => {
+		const valueFirst = await pargs(entrypoint, {
+			args: ['-l', '5', '--no-limit'],
+			options: { limit: { type: 'string', short: 'l', negatable: true } },
+		});
+		st.deepEqual(
+			valueFirst.errors,
+			['Error: Arguments `--limit` and `--no-limit` are mutually exclusive'],
+			'a value then a negation',
+		);
+
+		const negationFirst = await pargs(entrypoint, {
+			args: ['--no-limit', '--limit=5'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(
+			negationFirst.errors,
+			['Error: Arguments `--limit` and `--no-limit` are mutually exclusive'],
+			'a negation then a value',
+		);
+	});
+
+	t.test('a repeated negation alone is not an error', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit', '--no-limit'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.equal(result.values.limit, false, 'still `false`');
+	});
+
+	t.test('root `last-wins` keeps the last occurrence', async (st) => {
+		const negative = await pargs(entrypoint, {
+			args: ['--limit', '5', '--no-limit'],
+			negation: 'last-wins',
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(negative.errors, [], 'no error');
+		st.equal(negative.values.limit, false, '`--no-limit` last wins');
+
+		const positive = await pargs(entrypoint, {
+			args: ['--no-limit', '--limit', '5'],
+			negation: 'last-wins',
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(positive.errors, [], 'no error');
+		st.equal(positive.values.limit, '5', '`--limit 5` last wins');
+	});
+
+	t.test('a per-option `negation` overrides the root', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--limit', '5', '--no-limit'],
+			negation: 'last-wins',
+			options: { limit: { type: 'string', negatable: true, negation: 'exclusive' } },
+		});
+		st.deepEqual(
+			result.errors,
+			['Error: Arguments `--limit` and `--no-limit` are mutually exclusive'],
+			'the option opted back in',
+		);
+	});
+
+	t.test('a negation overrides a `default`', async (st) => {
+		const negated = await pargs(entrypoint, {
+			args: ['--no-limit'],
+			options: { limit: { type: 'string', default: '3', negatable: true } },
+		});
+		st.equal(negated.values.limit, false, '`--no-limit` is `false`');
+
+		const unpassed = await pargs(entrypoint, {
+			args: [],
+			options: { limit: { type: 'string', default: '3', negatable: true } },
+		});
+		st.equal(unpassed.values.limit, '3', 'the default still applies');
+	});
+
+	t.test('`enum`, `number`, and `integer` options are not validated against `false`', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-level', '--no-ratio', '--no-count'],
+			options: {
+				level: { type: 'enum', choices: ['debug', 'info'], negatable: true },
+				ratio: { type: 'number', negatable: true },
+				count: { type: 'integer', negatable: true },
+			},
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.deepEqual(
+			{ ...result.values },
+			{
+				level: false,
+				ratio: false,
+				count: false,
+				help: false,
+				version: false,
+			},
+			'each is `false`, not a choice or a coerced number',
+		);
+
+		const invalid = await pargs(entrypoint, {
+			args: ['--level', 'nope', '--count', '1.5'],
+			options: {
+				level: { type: 'enum', choices: ['debug', 'info'], negatable: true },
+				count: { type: 'integer', negatable: true },
+			},
+		});
+		st.deepEqual(
+			invalid.errors,
+			['Error: Invalid value for option "level"', 'Error: Invalid integer value for option "count"'],
+			'a real value is still validated',
+		);
+	});
+
+	t.test('combines with `optionalValue`', async (st) => {
+		const bare = await pargs(entrypoint, {
+			args: ['--limit'],
+			options: { limit: { type: 'string', optionalValue: true, negatable: true } },
+		});
+		st.equal(bare.values.limit, true, 'a bare occurrence is `true`');
+
+		const negated = await pargs(entrypoint, {
+			args: ['--no-limit'],
+			options: { limit: { type: 'string', optionalValue: true, negatable: true } },
+		});
+		st.equal(negated.values.limit, false, 'a negation is `false`');
+	});
+
+	t.test('a negation takes no value', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit=5'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(result.errors, ["Error: Option '--no-limit' does not take an argument"], 'an attached value is an error');
+	});
+
+	t.test('`--no-no-` is an unknown option, as it is for a boolean', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-no-limit', '--limit', '5'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(result.errors, ["Error: Unknown option '--no-no-limit'"], '`--no-no-limit` is unknown');
+		st.deepEqual({ ...result.values }, {}, 'a fatal error leaves no `values`');
+
+		const withValue = await pargs(entrypoint, {
+			args: ['--no-no-limit=5'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(withValue.errors, ["Error: Unknown option '--no-no-limit'"], 'an attached value does not change that');
+
+		const boolean = await pargs(entrypoint, {
+			args: ['--no-no-verbose'],
+			options: { verbose: { type: 'boolean' } },
+		});
+		st.deepEqual(withValue.errors[0].replace('limit', ''), boolean.errors[0].replace('verbose', ''), 'the same error a boolean gets');
+	});
+
+	t.test('an earlier error is still reported first', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--nope', '--no-no-limit'],
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(result.errors, ["Error: Unknown option '--nope'"], 'the first unknown option wins');
+	});
+
+	t.test('`--no-no-` after `--` is a positional', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--', '--no-no-limit'],
+			allowPositionals: true,
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.deepEqual(result.positionals, ['--no-no-limit'], 'it is a positional');
+	});
+
+	t.test('`tokens` report a negation as `parseArgs` reports a boolean one', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit'],
+			tokens: true,
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.deepEqual(
+			result.tokens,
+			[{
+				kind: 'option',
+				name: 'limit',
+				rawName: '--no-limit',
+				index: 0,
+				value: undefined,
+				inlineValue: undefined,
+			}],
+			'one `limit` token, with the `--no-` raw name',
+		);
+	});
+
+	t.test('`partialValues` keeps a negation', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit', '--no-no-limit', '--nope'],
+			partialValues: true,
+			options: { limit: { type: 'string', negatable: true } },
+		});
+		st.equal(result.errors.length, 1, 'only the fatal error is reported');
+		st.equal(result.values.limit, false, '`--no-limit` survives');
+		st.equal('no-limit' in result.values, false, 'no `no-limit` key in `values`');
+	});
+
+	t.test('a root option leading a subcommand', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit', 'build'],
+			options: { limit: { type: 'string', negatable: true } },
+			subcommands: { build: {} },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.equal(result.values.limit, false, 'the root option is negated');
+		st.equal(result.command?.name, 'build', 'the subcommand still runs');
+	});
+
+	t.test('an option the `defaultCommand` also declares is routed to it', async (st) => {
+		const result = await pargs(entrypoint, {
+			args: ['--no-limit'],
+			defaultCommand: 'run',
+			options: { limit: { type: 'string', negatable: true } },
+			subcommands: { run: { options: { limit: { type: 'string', negatable: true } } } },
+		});
+		st.deepEqual(result.errors, [], 'no error');
+		st.equal('limit' in result.values, false, 'the root does not take it');
+		st.equal(result.command.values.limit, false, 'the default command negates it');
+	});
+
+	t.test('help shows the `--no-` form', (st) => {
+		const help = generateHelp('cli', {
+			options: {
+				limit: {
+					type: 'string',
+					placeholder: 'count',
+					negatable: true,
+				},
+			},
+		});
+		st.match(help, /--\[no-\]limit <count>/, 'the row names both forms');
+		st.end();
+	});
+
+	t.test('a non-boolean `negatable` throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				// @ts-expect-error
+				options: { limit: { type: 'string', negatable: 'yes' } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`negatable` must be a boolean; `limit` is invalid/, 'the message names the option');
+		}
+	});
+
+	t.test('`negatable` on a boolean option throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				// @ts-expect-error
+				options: { verbose: { type: 'boolean', negatable: true } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /always negatable; `verbose` is invalid/, 'the message names the option');
+		}
+	});
+
+	t.test('`negatable` with `multiple` throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				// @ts-expect-error
+				options: { plugins: { type: 'string', multiple: true, negatable: true } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`multiple` or `variadic`; `plugins` is invalid/, 'the message names the option');
+		}
+	});
+
+	t.test('`negatable` with `variadic` throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				// @ts-expect-error
+				options: { plugins: { type: 'string', variadic: true, negatable: true } },
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`multiple` or `variadic`; `plugins` is invalid/, 'the message names the option');
+		}
+	});
+
+	t.test('`negatable` alongside a declared `no-` option throws', async (st) => {
+		try {
+			await pargs(entrypoint, {
+				options: {
+					limit: { type: 'string', negatable: true },
+					'no-limit': { type: 'boolean' },
+				},
+			});
+			st.fail('should have thrown');
+		} catch (e) {
+			st.ok(e instanceof TypeError, 'throws a TypeError');
+			st.match(/** @type {Error} */ (e).message, /`--no-limit`, which is already declared as an option; `limit` is invalid/, 'the message names both');
+		}
+	});
+});
+
 test('pargs - unknown options detection', async (t) => {
 	const { name: testDir, removeCallback } = tmp.dirSync();
 	t.teardown(emptyFirst(testDir, removeCallback));
