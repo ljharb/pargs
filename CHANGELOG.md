@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.8.1](https://github.com/ljharb/pargs/compare/v1.8.0...v1.8.1) - 2026-11-10
+
+### Commits
+
+- [Fix] `number`/`integer`: reject an empty or all-whitespace value [`4948882`](https://github.com/ljharb/pargs/commit/494888293b9f21a4235ba38c8d6c9367781e2ab0)
+
 ## [v1.8.0](https://github.com/ljharb/pargs/compare/v1.7.0...v1.8.0) - 2026-11-10
 
 ### Commits
